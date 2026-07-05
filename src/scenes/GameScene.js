@@ -56,7 +56,7 @@ export class GameScene extends Scene {
     });
 
     // --- Player ---
-    this.player = new Player(this, 80, LEVEL.groundY - 40, this.bullets);
+    this.player = new Player(this, LEVEL.spawn.x, LEVEL.spawn.y, this.bullets);
 
     // --- Collisions ---
     this.physics.add.collider(this.player, this.platforms);
@@ -133,7 +133,7 @@ export class GameScene extends Scene {
     this.cameras.main.startFollow(this.player, true, CONFIG.camera.lerp, CONFIG.camera.lerp);
     this.cameras.main.setDeadzone(60, 30);
     // Initial follow offset (directionally updated in update())
-    this.cameras.main.setFollowOffset(CONFIG.camera.lookAhead, -80);
+    this.cameras.main.setFollowOffset(CONFIG.camera.lookAhead, CONFIG.camera.followOffsetY);
 
     console.log('[GameScene] ready');
   }
@@ -188,7 +188,7 @@ export class GameScene extends Scene {
     const lookX = this.player.facingRight
       ? CONFIG.camera.lookAhead
       : -CONFIG.camera.lookAhead;
-    this.cameras.main.setFollowOffset(lookX, -80);
+    this.cameras.main.setFollowOffset(lookX, CONFIG.camera.followOffsetY);
   }
 
   /**

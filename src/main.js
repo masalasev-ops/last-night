@@ -30,7 +30,12 @@ const StartGame = (parent) => {
 };
 
 document.addEventListener('DOMContentLoaded', () => {
-  StartGame('game-container');
+  const game = StartGame('game-container');
+  // Dev-only globals for console debugging + automated verification. Stripped from prod builds.
+  if (import.meta.env.DEV) {
+    window.game = game;
+    window.CONFIG = CONFIG;
+  }
 });
 
 export default StartGame;

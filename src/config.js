@@ -35,6 +35,10 @@ export const CONFIG = {
     bulletPoolSize: 30, // max pooled bullets alive at once
   },
 
+  // Gun-tip offset from the player's sprite origin (feet), in texture px.
+  // Bullets + muzzle flash spawn here; x is mirrored by aim direction. Tuned on screen.
+  muzzleOffset: { x: 26, y: -38 },
+
   // Enemy
   enemy: {
     maxHealth: 30,
@@ -54,6 +58,7 @@ export const CONFIG = {
   camera: {
     lookAhead: 80, // px ahead of player
     lerp: 0.12, // follow smoothing
+    followOffsetY: -110, // px — lifts the view so the feet-origin soldier is framed with headroom
   },
 
   // Screen shake (Phaser camera.shake) — { duration: ms, intensity: 0-1 (viewport fraction) }
@@ -98,7 +103,7 @@ export const CONFIG = {
   // (§6): replace the generated keys with real asset keys here without touching
   // game logic.
   TEXTURE_MAP: {
-    player: 'placeholder-player',
+    player: 'player-idle', // real Soldier_1 art (swap-point flipped in L1)
     enemy: 'placeholder-enemy',
     bullet: 'placeholder-bullet',
   },
@@ -110,6 +115,7 @@ export const CONFIG = {
     worldWidth: 6400,
     worldHeight: 540,
     groundY: 524, // top of the ground surface (16px thick below this)
+    spawn: { x: 160, y: 504 }, // player start; y = groundY − 20 so feet drop onto the ground
     platforms: [
       // { x, y, width, height } — x/y are center-x, top-y.
       // Chained platforms: edge gap designed so walking jumps clear ascending,
@@ -201,6 +207,12 @@ export const ASSETS = {
   ],
 };
 
-// Player physics body is set explicitly in L1 — NOT derived from the 128px sprite.
-// Origin at the feet so the body sits on the ground; tune to the art.
-export const PLAYER_BODY = { width: 40, height: 104, originX: 0.5, originY: 1.0 };
+// Player physics body — set explicitly, NOT derived from the 128px sprite.
+// Measured from Soldier_1/Idle.png (opaque region x46–91, y61–127 at scale 1.0):
+//   char center-x ≈ 68.5, feet at frame-y 127. Body hugs the torso/legs.
+//   originY 1.0 = frame bottom at feet; offsetX centers the 28-wide body on the
+//   character (68.5 − 14 ≈ 54) so flipX never shifts the hitbox; offsetY 65 sets
+//   the 62-tall body's base at the feet (65 + 62 = 127). Fine-tuned via debug overlay.
+export const PLAYER_BODY = {
+  width: 28, height: 62, originX: 0.5, originY: 1.0, offsetX: 54, offsetY: 65,
+};
