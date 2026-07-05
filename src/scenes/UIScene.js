@@ -22,8 +22,9 @@ export class UIScene extends Scene {
       color: palette.hudText,
     });
 
-    // Debug overlay — hidden by default, shown when GameScene.debugOn is true
-    this.debugText = this.add.text(4, 270 - 18, '', {
+    // Debug overlay — hidden by default, shown when GameScene.debugOn is true.
+    // Pinned to the bottom of the view; reads CONFIG.height so it tracks the resolution.
+    this.debugText = this.add.text(4, CONFIG.height - 18, '', {
       fontFamily: 'monospace',
       fontSize: 7,
       color: '#88ff88',

@@ -12,6 +12,7 @@ export default defineConfig({
         },
     },
     server: {
-        port: 8080
+        // Fixed port for Last Night — 8081 avoids clashing with the other project on 8080.
+        port: 8081
     }
 });

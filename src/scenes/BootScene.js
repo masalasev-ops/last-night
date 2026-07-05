@@ -1,25 +1,70 @@
 import { Scene } from 'phaser';
-import { CONFIG } from '../config.js';
+import { CONFIG, ASSETS } from '../config.js';
+import { registerAnimations } from '../animations.js';
 
 /** Convert a CSS hex string like '#7fb0c8' to a Phaser integer 0x7fb0c8. */
 const hexToInt = (hex) => parseInt(hex.replace('#', ''), 16);
 
+/** Capitalize a state name into its sheet filename stem (idle → Idle). */
+const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+
 /**
  * BootScene — runs once at startup.
- * Generates all placeholder textures from code (no external assets),
- * then launches GameScene + UIScene.
+ * preload() loads the real Phase-2 spritesheets/tileset/backgrounds; create()
+ * generates the placeholder textures (the fallback for any entity whose real art
+ * isn't wired yet), registers all animations, then launches GameScene + UIScene.
  *
- * Per §6 of the build spec, this is the single place where placeholder
- * visuals are created. Real art will replace these later without touching
- * game logic — just swap the texture keys.
+ * Per §6 of the build spec, this is the single place where placeholder visuals are
+ * created and real art is loaded. Gameplay logic swaps between them via TEXTURE_MAP.
  */
 export class BootScene extends Scene {
   constructor() {
     super('Boot');
   }
 
+  /**
+   * Load every real spritesheet named in the ASSETS registry, plus the tileset and
+   * parallax backgrounds. Each character sheet is a 128×128-frame spritesheet; the
+   * texture key matches the animation key it will feed (e.g. 'player-idle').
+   */
+  preload() {
+    // Player — 9 state sheets (128×128 frames)
+    const P = ASSETS.player;
+    for (const [state, [file]] of Object.entries(P.anims)) {
+      this.load.spritesheet(`player-${state}`, `${P.dir}/${file}`, {
+        frameWidth: P.frame,
+        frameHeight: P.frame,
+      });
+    }
+
+    // Zombies — 4 types × 5 states; filename is the capitalized state (idle → Idle.png)
+    const Z = ASSETS.zombies;
+    for (const [type, counts] of Object.entries(Z.types)) {
+      for (const state of Object.keys(counts)) {
+        this.load.spritesheet(`${type}-${state}`, `${Z.dir}/${type}/${cap(state)}.png`, {
+          frameWidth: Z.frame,
+          frameHeight: Z.frame,
+        });
+      }
+    }
+
+    // Terrain tileset (image for now; L2 decides tilemap vs. manual tiling)
+    this.load.image('tileset', ASSETS.tileset);
+
+    // Parallax background layers, keyed by index (far → near)
+    ASSETS.bgLayers.forEach(([path], i) => this.load.image(`bg-layer-${i}`, path));
+  }
+
   create() {
     this.generatePlaceholders();
+    registerAnimations(this);
+
+    // DoD verification: confirm every animation registered (9 player + 20 zombie = 29)
+    console.log(
+      `[BootScene] Animations registered: ${this.anims.anims.size} →`,
+      [...this.anims.anims.keys()],
+    );
+
     this.scene.start('Game');
     this.scene.launch('UI'); // overlay — runs above GameScene
   }
