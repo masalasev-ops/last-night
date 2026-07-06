@@ -62,7 +62,7 @@ export class Bullet extends Physics.Arcade.Sprite {
     const vy = this.body.velocity.y;
     this.distanceTraveled += Math.sqrt(vx * vx + vy * vy) * (delta / 1000);
 
-    if (this.distanceTraveled >= CONFIG.pistol.bulletRange) {
+    if (this.distanceTraveled >= CONFIG.weapon.bulletRange) {
       this.deactivate();
       return;
     }

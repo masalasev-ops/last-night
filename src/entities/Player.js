@@ -81,7 +81,7 @@ export class Player extends Physics.Arcade.Sprite {
     // --- Shooting state ---
     this.bulletGroup = bulletGroup;
     this.shootTimer = 0; // s — cooldown until next shot allowed
-    this.ammo = CONFIG.pistol.magSize;
+    this.ammo = CONFIG.weapon.magSize;
     this.reloading = false;
     this.reloadTimer = 0; // s — remaining reload time
   }
@@ -99,7 +99,7 @@ export class Player extends Physics.Arcade.Sprite {
     }
 
     const dt = delta / 1000;
-    const { moveSpeed, sprintMultiplier, jumpVelocity, coyoteTime, jumpBuffer, pistol,
+    const { moveSpeed, sprintMultiplier, jumpVelocity, coyoteTime, jumpBuffer, weapon,
             invulnOnHit, knockback, knockbackDuration } = CONFIG;
     const { left, right, arrowLeft, arrowRight, jump, jumpUp, sprint, reload } = this.keys;
     const onGround = this.body.blocked.down;
@@ -180,20 +180,20 @@ export class Player extends Physics.Arcade.Sprite {
     this.shootTimer = Math.max(0, this.shootTimer - dt);
 
     if (pointer.isDown && this.shootTimer <= 0 && this.ammo > 0 && !this.reloading) {
-      this.shootTimer = 1 / pistol.fireRate;
+      this.shootTimer = 1 / weapon.fireRate;
       this.spawnBullet(); // aim geometry (from the gun tip) lives in spawnBullet
     }
 
     // --- Reload ---
-    if (Input.Keyboard.JustDown(reload) && this.ammo < pistol.magSize && !this.reloading) {
+    if (Input.Keyboard.JustDown(reload) && this.ammo < weapon.magSize && !this.reloading) {
       this.reloading = true;
-      this.reloadTimer = pistol.reloadTime;
+      this.reloadTimer = weapon.reloadTime;
     }
 
     if (this.reloading) {
       this.reloadTimer -= dt;
       if (this.reloadTimer <= 0) {
-        this.ammo = pistol.magSize;
+        this.ammo = weapon.magSize;
         this.reloading = false;
         this.reloadTimer = 0;
       }
@@ -223,8 +223,8 @@ export class Player extends Physics.Arcade.Sprite {
     const dy = pointer.worldY - my;
     const len = Math.hypot(dx, dy);
     if (len === 0) return;
-    const vx = (dx / len) * CONFIG.pistol.bulletSpeed;
-    const vy = (dy / len) * CONFIG.pistol.bulletSpeed;
+    const vx = (dx / len) * CONFIG.weapon.bulletSpeed;
+    const vy = (dy / len) * CONFIG.weapon.bulletSpeed;
 
     const bullet = this.bulletGroup.get(mx, my, CONFIG.TEXTURE_MAP.bullet);
     if (bullet) {

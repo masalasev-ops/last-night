@@ -24,8 +24,9 @@ export const CONFIG = {
   coyoteTime: 0.1, // s — grace period after leaving ground
   jumpBuffer: 0.1, // s — grace period before landing
 
-  // Pistol
-  pistol: {
+  // Weapon — the soldier wields a two-handed rifle (Soldier_1 Shot sheet). `name` drives the HUD label.
+  weapon: {
+    name: 'RIFLE',
     bulletSpeed: 1240, // px/s
     fireRate: 6, // shots per second
     magSize: 12,
@@ -49,9 +50,15 @@ export const CONFIG = {
     touchDamage: 10,
     attackCooldown: 0.8, // s
     patrolRange: 160, // px — how far enemy walks left/right from spawn point
+    retreatDistance: 150, // px — when the player is perched unreachable above, the zombie backs off
+    // toward where it came from until it's this far away, then settles into a local patrol there.
+    // Bounded (well under a screen-width) so it stays visible instead of marching off-screen.
     hurtDuration: 0.15, // s — white-tint flash when hit
     enemyPoolSize: 10, // max pooled enemies alive at once
-    maxVerticalReach: 72, // px — if player is farther above/below, enemy can't reach them
+    maxVerticalReach: 72, // px — chase/detection vertical tolerance (how far above/below it will pursue)
+    climbHeight: 32, // px — max step-up a zombie can manage (it can't jump). A *grounded* player higher
+    // than this is unreachable → the zombie gives up and retreats. Must be below the smallest platform
+    // rise (~64px after grid-snap) so every platform triggers it, but above flat-ground noise (0).
     corpseLinger: 1.5, // s — how long the dead pose holds on the ground before pooling out
   },
 
@@ -76,11 +83,37 @@ export const CONFIG = {
     blood: { count: 8, lifespan: 350, speedMin: 60, speedMax: 200, gravityY: 600 },
   },
 
-  // Vignette filter (camera internal filter) — re-enabled/tuned in L4
-  vignette: { x: 0.5, y: 0.5, radius: 0.55, strength: 0.6, color: 0x000000 },
+  // Vignette camera filter — cam.filters.external.addVignette(x, y, radius, strength, color).
+  // Provides the dark oval framing + edge mood (the "filter working" deliverable).
+  vignette: { x: 0.5, y: 0.5, radius: 0.5, strength: 0.22, color: 0x000000 },
 
-  // Player point light (soft radial glow, no normal maps needed) — re-enabled/tuned in L4
-  playerLight: { color: 0x5577aa, radius: 140, intensity: 0.4, attenuation: 0.08 },
+  // Night atmosphere (L4). The darkness overlay fills the screen with darkColor@darkAlpha and
+  // erases a body glow (glowScale) + a gun flashlight cone (coneScale). glowScale is generous
+  // so mid-range zombies stay dimly visible (fairness). night = optional ColorMatrix.night()
+  // amount — left at 0: even small amounts darken the whole scene to near-black, so the mood
+  // comes from the vignette filter + dark overlay instead. Tuned together, by eye.
+  //
+  // enabled: master switch. OFF by default — the darkness overlay hid the player/zombies too much
+  // to enjoy the level. Flip to true to bring back the full night mode (vignette + dark overlay +
+  // flashlight cone + fog); all of it stays wired and re-enableable.
+  atmosphere: {
+    enabled: false,       // master switch for the whole night-atmosphere stack (see note above)
+    night: 0,             // ColorMatrix.night() grade — 0 = off (over-darkens; see note above)
+    darkColor: 0x05070f,  // darkness overlay fill (near-black navy)
+    darkAlpha: 0.35,      // overlay opacity — light nighttime tint; background stays clearly visible
+    glowScale: 1.8,       // ambient player-body glow size (× the __LIGHT_RADIAL texture)
+    coneScale: 3.0,       // flashlight cone reach (× the __LIGHT_CONE texture)
+    fog: { alpha: 0.13, scale: 1.5, speedMin: 8, speedMax: 24, lifespan: 9000, frequency: 650 },
+  },
+
+  // HUD (UIScene) — health bar + ammo + weapon, sized for 960×540.
+  hud: {
+    bar: { x: 12, y: 12, w: 200, h: 18, bg: 0x3a0a0a, fill: 0x3ad06a, low: 0xd03a3a, lowPct: 0.35, border: 0x101014 },
+    font: { size: 16, family: 'monospace', color: '#d6dae2' },
+    debugFont: { size: 12, family: 'monospace', color: '#88ff88' },
+    // Dark outline on HUD text so it stays legible over the bright forest (no darkness overlay now).
+    stroke: { color: '#0a0a0f', thickness: 3 },
+  },
 
   // Placeholder visuals — generated in BootScene (§6 of build spec). Sizes doubled to stay
   // proportional at 960×540; real art replaces player (L1) / enemy (L3) via TEXTURE_MAP.

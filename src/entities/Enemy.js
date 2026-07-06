@@ -21,6 +21,7 @@ const STATE = {
   CHASE: 'CHASE',
   ATTACK: 'ATTACK',
   HURT: 'HURT',
+  RETREAT: 'RETREAT', // player is perched on a platform above (unreachable) → walk away, re-anchor patrol
   DEAD: 'DEAD',
 };
 
@@ -79,6 +80,23 @@ export class Enemy extends Physics.Arcade.Sprite {
     this.attackTimer = 0;
     this.hurtTimer = 0;
     this.deathTimer = 0;
+    this.retreatDir = 1; // walk-away direction while retreating (set on entry to RETREAT)
+    this.gaveUp = false; // true after a bounded retreat: don't re-chase/re-retreat this perch until
+    // the player becomes reachable again (prevents an endless retreat↔patrol oscillation).
+  }
+
+  /**
+   * Give up on a player who is standing on a platform overhead (zombies can't jump, so they'd
+   * otherwise mill about beneath it). Walk back the way we came — i.e. away from the player's
+   * horizontal position (we chased toward them, so away = homeward). Direction is derived from the
+   * live player position, NOT spawnX (which RETREAT re-anchors and would otherwise corrupt this).
+   */
+  enterRetreat() {
+    this.state = STATE.RETREAT;
+    const p = this.player;
+    if (this.x < p.x) this.retreatDir = -1;        // player to our right → back off left
+    else if (this.x > p.x) this.retreatDir = 1;    // player to our left  → back off right
+    else this.retreatDir = this.spawnX >= this.x ? 1 : -1; // dead-centre: bias toward home
   }
 
   /** Face a horizontal direction (dir<0 = left), honoring the sheet's default facing. */
@@ -106,7 +124,7 @@ export class Enemy extends Physics.Arcade.Sprite {
       return;
     }
 
-    const { moveSpeed, chaseSpeed, detectionRadius, attackRange, attackCooldown, patrolRange, maxVerticalReach } = CONFIG.enemy;
+    const { moveSpeed, chaseSpeed, detectionRadius, attackRange, attackCooldown, patrolRange, maxVerticalReach, climbHeight, retreatDistance } = CONFIG.enemy;
     const player = this.player;
 
     // Guard: if player ref isn't set yet, stand idle
@@ -121,16 +139,37 @@ export class Enemy extends Physics.Arcade.Sprite {
     const distToPlayer = Math.sqrt(dx * dx + dy * dy);
     const dirToPlayer = player.x >= this.x ? 1 : -1;
 
+    // Player is standing on a platform overhead, out of reach (zombies can't jump — climbHeight is
+    // the most they can step up). Requires the player to be *grounded* above us — not just mid-leap —
+    // so a jump-over doesn't trigger it.
+    const playerUnreachableAbove =
+      player.body.blocked.down && this.y - player.y > climbHeight;
+
+    // Re-arm once the player is reachable again (came down / not perched above), so the next time
+    // they perch we retreat afresh instead of staying "given up".
+    if (!playerUnreachableAbove) this.gaveUp = false;
+
     switch (this.state) {
-      // --- PATROL: walk back and forth within patrol range ---
+      // --- PATROL: walk back and forth within patrol range. Only chases a *reachable* player, so a
+      // player perched on a platform above is simply ignored here (the retreat is driven from CHASE/
+      // ATTACK, never from PATROL — re-triggering it here caused an endless walk off-screen). ---
       case STATE.PATROL: {
+        // Player just landed on a platform overhead (e.g. mid-patrol, or during the airborne frames
+        // of a jump that our CHASE exit dropped us here for) → back off, unless we already gave up
+        // on this perch. gaveUp stops this from firing every frame (endless walk-away).
+        if (playerUnreachableAbove && distToPlayer <= detectionRadius && !this.gaveUp) {
+          this.enterRetreat();
+          break;
+        }
+
         this.body.setVelocityX(moveSpeed * this.patrolDir);
         this.faceDir(this.patrolDir);
 
         if (this.x >= this.spawnX + patrolRange) this.patrolDir = -1;
         if (this.x <= this.spawnX - patrolRange) this.patrolDir = 1;
 
-        if (distToPlayer <= detectionRadius && Math.abs(dy) <= maxVerticalReach) {
+        // Chase only a *reachable* player (a player camping overhead is handled by the retreat above).
+        if (distToPlayer <= detectionRadius && Math.abs(dy) <= maxVerticalReach && !playerUnreachableAbove) {
           this.state = STATE.CHASE;
         }
         break;
@@ -138,6 +177,12 @@ export class Enemy extends Physics.Arcade.Sprite {
 
       // --- CHASE: move toward player at chase speed ---
       case STATE.CHASE: {
+        // Player jumped onto a platform we can't reach → give up and retreat (don't hover below).
+        if (playerUnreachableAbove) {
+          this.enterRetreat();
+          break;
+        }
+
         this.body.setVelocityX(chaseSpeed * dirToPlayer);
         this.faceDir(dirToPlayer);
 
@@ -153,6 +198,12 @@ export class Enemy extends Physics.Arcade.Sprite {
 
       // --- ATTACK: deal damage on cooldown; the swing anim is driven by the strike only ---
       case STATE.ATTACK: {
+        // Player hopped onto a platform overhead mid-melee → stop swinging at nothing, retreat.
+        if (playerUnreachableAbove) {
+          this.enterRetreat();
+          break;
+        }
+
         this.body.setVelocityX(0);
         this.faceDir(dirToPlayer);
 
@@ -164,6 +215,31 @@ export class Enemy extends Physics.Arcade.Sprite {
         }
 
         if (distToPlayer > attackRange) this.state = STATE.CHASE;
+        break;
+      }
+
+      // --- RETREAT: player is perched above; walk back the way we came a *bounded* distance
+      // (retreatDistance), then re-home the patrol there so we lurk nearby, still on-screen — not
+      // marching off forever. Resume chasing if the player drops back down within reach. ---
+      case STATE.RETREAT: {
+        this.body.setVelocityX(moveSpeed * this.retreatDir);
+        this.faceDir(this.retreatDir);
+
+        // Done once the player comes down, or we've backed off the bounded retreat distance.
+        if (!playerUnreachableAbove || distToPlayer >= retreatDistance) {
+          this.spawnX = this.x;             // re-home the patrol here (backed off, but still in view)
+          this.patrolDir = this.retreatDir; // keep drifting the same way
+          if (playerUnreachableAbove) {
+            // Backed off far enough while the player is still perched → give up on this perch and
+            // patrol locally (gaveUp keeps us from immediately retreating again → no walk off-screen).
+            this.gaveUp = true;
+            this.state = STATE.PATROL;
+          } else {
+            // Player dropped back down → re-engage if they're near and reachable, else patrol here.
+            this.state =
+              distToPlayer <= detectionRadius && Math.abs(dy) <= maxVerticalReach ? STATE.CHASE : STATE.PATROL;
+          }
+        }
         break;
       }
 
@@ -192,7 +268,7 @@ export class Enemy extends Physics.Arcade.Sprite {
     if (this.state === STATE.ATTACK) return;
     let anim;
     if (this.state === STATE.HURT) anim = 'hurt';
-    else if (this.state === STATE.PATROL || this.state === STATE.CHASE) anim = 'walk';
+    else if (this.state === STATE.PATROL || this.state === STATE.CHASE || this.state === STATE.RETREAT) anim = 'walk';
     else anim = 'idle';
     this.play(`${this.type}-${anim}`, true);
   }

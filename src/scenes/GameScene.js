@@ -1,5 +1,5 @@
-import { Scene, Input } from 'phaser';
-import { CONFIG, ASSETS } from '../config.js';
+import { Scene, Input, BlendModes } from 'phaser';
+import { CONFIG, ASSETS, PLAYER_BODY } from '../config.js';
 import { Player } from '../entities/Player.js';
 import { Bullet } from '../entities/Bullet.js';
 import { Enemy } from '../entities/Enemy.js';
@@ -35,7 +35,7 @@ export class GameScene extends Scene {
     // --- Bullet pool (created before Player so we can pass it in) ---
     this.bullets = this.physics.add.group({
       classType: Bullet,
-      maxSize: CONFIG.pistol.bulletPoolSize,
+      maxSize: CONFIG.weapon.bulletPoolSize,
       runChildUpdate: true, // calls preUpdate on active bullets each frame
     });
 
@@ -95,17 +95,44 @@ export class GameScene extends Scene {
       emitting: false,
     });
 
-    // --- Vignette filter (darkens screen edges) ---
-    // const v = CONFIG.vignette;
-    // this.cameras.main.filters.internal.addVignette(v.x, v.y, v.radius, v.strength, v.color);
+    // --- Atmosphere (L4) — gated behind the master switch. Off by default: the darkness overlay
+    // hid the player/zombies too much to enjoy the level. When enabled it re-adds the full night
+    // mode (vignette + optional night grade + darkness/flashlight overlay + fog). ---
+    this.darkness = null; // set below only when atmosphere is enabled; update() guards on it
+    if (CONFIG.atmosphere.enabled) {
+      const cam = this.cameras.main;
+      const v = CONFIG.vignette;
+      cam.filters.external.addVignette(v.x, v.y, v.radius, v.strength, v.color);
+      // Night ColorMatrix is opt-in — even low amounts over-darken, so it's off by default
+      // (the vignette filter + dark overlay carry the mood). Guarded so it stays re-enableable.
+      if (CONFIG.atmosphere.night > 0) {
+        cam.filters.internal.addColorMatrix().colorMatrix.night(CONFIG.atmosphere.night);
+      }
 
-    // --- Player point light (soft radial glow, no normal maps needed) ---
-    // const pl = CONFIG.playerLight;
-    // this.lights.enable();
-    // this.playerLight = this.lights.addPointLight(
-    //   this.player.x, this.player.y,
-    //   pl.color, pl.radius, pl.intensity, pl.attenuation
-    // );
+      // Darkness + flashlight overlay: a camera-pinned RenderTexture filled near-black each
+      // frame, with the player glow + gun flashlight cone erased into it (see updateLighting).
+      this.darkness = this.add
+        .renderTexture(0, 0, CONFIG.width, CONFIG.height)
+        .setOrigin(0, 0)
+        .setScrollFactor(0)
+        .setDepth(1000);
+
+      // Fog: soft drifting puffs just beneath the darkness, so the flashlight catches them.
+      const fog = CONFIG.atmosphere.fog;
+      this.add
+        .particles(0, 0, '__FOG', {
+          x: { min: 0, max: CONFIG.width },
+          y: { min: CONFIG.height * 0.35, max: CONFIG.height },
+          frequency: fog.frequency,
+          lifespan: fog.lifespan,
+          alpha: { start: fog.alpha, end: 0 },
+          scale: fog.scale,
+          speedX: { min: fog.speedMin, max: fog.speedMax },
+          speedY: { min: -4, max: 4 },
+        })
+        .setScrollFactor(0)
+        .setDepth(999);
+    }
 
     // --- Debug toggle ---
     this.input.mouse.disableContextMenu();
@@ -138,8 +165,9 @@ export class GameScene extends Scene {
       this.player.body.setVelocity(0, 0);
     }
 
-    // Player light follows the player
-    // this.playerLight.setPosition(this.player.x, this.player.y);
+    // Darkness overlay: erase the player glow + gun flashlight cone this frame (only when the
+    // night atmosphere is enabled — otherwise there's no overlay to redraw)
+    if (this.darkness) this.updateLighting();
 
     // --- Debug toggle (backtick `~`) ---
     if (Input.Keyboard.JustDown(this.debugKey)) {
@@ -178,6 +206,39 @@ export class GameScene extends Scene {
     // Parallax: scroll each pinned bg layer's texture proportional to camera scroll
     const sx = this.cameras.main.scrollX;
     for (const { ts, factor } of this.bgLayers) ts.tilePositionX = sx * factor;
+  }
+
+  /**
+   * Redraw the darkness overlay each frame: fill near-black, then ERASE a soft body glow and
+   * the gun flashlight cone into it. The glow keeps the hero (and nearby zombies) dimly
+   * visible; the cone apex sits at the gun muzzle (reusing muzzleOffset) and points at the
+   * cursor — the same direction bullets travel.
+   */
+  updateLighting() {
+    const cam = this.cameras.main;
+    const p = this.player;
+    const A = CONFIG.atmosphere;
+    const m = CONFIG.muzzleOffset;
+    const dir = p.facingRight ? 1 : -1;
+
+    // Gun muzzle (world) — the exact point bullets spawn from
+    const muzzleWX = p.x + dir * m.x;
+    const muzzleWY = p.y + m.y;
+    const ptr = this.input.activePointer;
+    const angleDeg = (Math.atan2(ptr.worldY - muzzleWY, ptr.worldX - muzzleWX) * 180) / Math.PI;
+
+    // Screen-space positions (the overlay is camera-pinned)
+    const muzzleX = muzzleWX - cam.scrollX;
+    const muzzleY = muzzleWY - cam.scrollY;
+    const glowX = p.x - cam.scrollX;
+    const glowY = p.y - cam.scrollY - PLAYER_BODY.height / 2; // body centre
+
+    const rt = this.darkness;
+    rt.clear();
+    rt.fill(A.darkColor, A.darkAlpha);
+    rt.stamp('__LIGHT_RADIAL', null, glowX, glowY, { blendMode: BlendModes.ERASE, scale: A.glowScale });
+    rt.stamp('__LIGHT_CONE', null, muzzleX, muzzleY, { blendMode: BlendModes.ERASE, angle: angleDeg, originX: 0, originY: 0.5, scale: A.coneScale });
+    rt.render();
   }
 
   /**
@@ -284,7 +345,7 @@ export class GameScene extends Scene {
     this.bloodEmitter.explode(CONFIG.particles.blood.count, enemy.x, enemy.y);
 
     bullet.deactivate();
-    enemy.takeDamage(CONFIG.pistol.damage);
+    enemy.takeDamage(CONFIG.weapon.damage);
   }
 }
 

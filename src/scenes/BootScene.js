@@ -57,6 +57,7 @@ export class BootScene extends Scene {
 
   create() {
     this.generatePlaceholders();
+    this.generateLightTextures();
     registerAnimations(this);
 
     // DoD verification: confirm every animation registered (9 player + 20 zombie = 29)
@@ -134,5 +135,58 @@ export class BootScene extends Scene {
     g.destroy();
 
     console.log('[BootScene] Placeholder textures generated.');
+  }
+
+  /**
+   * Generate soft light/fog textures from canvas gradients. Their ALPHA gradients let the
+   * GameScene darkness overlay ERASE them into soft holes:
+   *   __LIGHT_RADIAL — ambient body glow (opaque centre → transparent edge)
+   *   __LIGHT_CONE   — gun flashlight, apex at left-centre, fanning right (blurred soft edges)
+   *   __FOG          — a soft drifting puff
+   */
+  generateLightTextures() {
+    // Ambient radial glow
+    const R = 256;
+    let ct = this.textures.createCanvas('__LIGHT_RADIAL', R, R);
+    let cx = ct.context;
+    let g = cx.createRadialGradient(R / 2, R / 2, 0, R / 2, R / 2, R / 2);
+    g.addColorStop(0, 'rgba(255,255,255,1)');
+    g.addColorStop(0.55, 'rgba(255,255,255,0.5)');
+    g.addColorStop(1, 'rgba(255,255,255,0)');
+    cx.fillStyle = g;
+    cx.fillRect(0, 0, R, R);
+    ct.refresh();
+
+    // Flashlight cone — apex at (0, C/2), radial falloff from the apex, clipped to a wedge
+    const C = 256, apexY = C / 2, half = Math.tan((24 * Math.PI) / 180) * C;
+    ct = this.textures.createCanvas('__LIGHT_CONE', C, C);
+    cx = ct.context;
+    g = cx.createRadialGradient(0, apexY, 0, 0, apexY, C);
+    g.addColorStop(0, 'rgba(255,255,255,0.95)');
+    g.addColorStop(0.5, 'rgba(255,255,255,0.55)');
+    g.addColorStop(1, 'rgba(255,255,255,0)');
+    cx.filter = 'blur(6px)'; // soften the wedge edges
+    cx.fillStyle = g;
+    cx.beginPath();
+    cx.moveTo(0, apexY);
+    cx.lineTo(C, apexY - half);
+    cx.lineTo(C, apexY + half);
+    cx.closePath();
+    cx.fill();
+    cx.filter = 'none';
+    ct.refresh();
+
+    // Fog puff — soft blue-grey blob
+    const F = 128;
+    ct = this.textures.createCanvas('__FOG', F, F);
+    cx = ct.context;
+    g = cx.createRadialGradient(F / 2, F / 2, 0, F / 2, F / 2, F / 2);
+    g.addColorStop(0, 'rgba(200,210,225,0.9)');
+    g.addColorStop(1, 'rgba(200,210,225,0)');
+    cx.fillStyle = g;
+    cx.fillRect(0, 0, F, F);
+    ct.refresh();
+
+    console.log('[BootScene] Light/fog textures generated.');
   }
 }
