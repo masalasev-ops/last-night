@@ -111,26 +111,26 @@ export class BootScene extends Scene {
     g.generateTexture('__WHITE', 1, 1);
     g.destroy();
 
-    // --- Particle textures (4×4 squares in palette colors) ---
+    // --- Particle textures (8×8 squares — sized for the 960×540 scale) ---
     // Muzzle flash — bright yellow-white
     g = this.make.graphics({ x: 0, y: 0, add: false });
     g.fillStyle(hexToInt(palette.muzzle), 1);
-    g.fillRect(0, 0, 4, 4);
-    g.generateTexture('__PARTICLE_MUZZLE', 4, 4);
+    g.fillRect(0, 0, 8, 8);
+    g.generateTexture('__PARTICLE_MUZZLE', 8, 8);
     g.destroy();
 
     // Bullet impact — bright white
     g = this.make.graphics({ x: 0, y: 0, add: false });
     g.fillStyle(hexToInt(palette.bullet), 1);
-    g.fillRect(0, 0, 4, 4);
-    g.generateTexture('__PARTICLE_IMPACT', 4, 4);
+    g.fillRect(0, 0, 8, 8);
+    g.generateTexture('__PARTICLE_IMPACT', 8, 8);
     g.destroy();
 
     // Blood — dark red
     g = this.make.graphics({ x: 0, y: 0, add: false });
     g.fillStyle(hexToInt(palette.blood), 1);
-    g.fillRect(0, 0, 4, 4);
-    g.generateTexture('__PARTICLE_BLOOD', 4, 4);
+    g.fillRect(0, 0, 8, 8);
+    g.generateTexture('__PARTICLE_BLOOD', 8, 8);
     g.destroy();
 
     console.log('[BootScene] Placeholder textures generated.');

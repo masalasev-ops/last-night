@@ -52,6 +52,7 @@ export const CONFIG = {
     hurtDuration: 0.15, // s — white-tint flash when hit
     enemyPoolSize: 10, // max pooled enemies alive at once
     maxVerticalReach: 72, // px — if player is farther above/below, enemy can't reach them
+    corpseLinger: 1.5, // s — how long the dead pose holds on the ground before pooling out
   },
 
   // Camera
@@ -67,11 +68,12 @@ export const CONFIG = {
     onHit: { duration: 150, intensity: 0.01 },
   },
 
-  // Particle burst tunables (explode-only emitters). Speeds retuned to the new scale in L3.
+  // Particle burst tunables (explode-only emitters). Retuned ×2 for the 960×540 scale in
+  // L3 (speeds/gravity doubled; blood count bumped). Particle textures are 8×8 (BootScene).
   particles: {
-    muzzle: { count: 4, lifespan: 150, speedMin: 20, speedMax: 80 },
-    impact: { count: 3, lifespan: 100, speedMin: 50, speedMax: 150 },
-    blood: { count: 5, lifespan: 300, speedMin: 30, speedMax: 100, gravityY: 300 },
+    muzzle: { count: 4, lifespan: 150, speedMin: 40, speedMax: 160 },
+    impact: { count: 4, lifespan: 100, speedMin: 100, speedMax: 300 },
+    blood: { count: 8, lifespan: 350, speedMin: 60, speedMax: 200, gravityY: 600 },
   },
 
   // Vignette filter (camera internal filter) — re-enabled/tuned in L4
@@ -126,29 +128,30 @@ export const CONFIG = {
       // Mid-level crossing
       { x: 1360, y: 424, width: 96, height: 16 },   // from ground
       { x: 1616, y: 356, width: 144, height: 16 },  // from #3  (edge gap 136px)
-      { x: 1976, y: 404, width: 112, height: 16 },  // from ground or drop from #4 (edge gap 232px down)
+      { x: 1976, y: 428, width: 112, height: 16 },  // from ground (L2: lowered 1 tile → 96px rise, comfortably reachable)
       // Staggered climb — three-step ascent to the peak
       { x: 2760, y: 440, width: 112, height: 16 },  // from ground
       { x: 3008, y: 370, width: 128, height: 16 },  // from #6  (edge gap 128px)
       { x: 3280, y: 300, width: 144, height: 16 },  // from #7  (edge gap 136px) — peak
-      { x: 3800, y: 404, width: 112, height: 16 },  // from ground or drop from #8
+      { x: 3800, y: 428, width: 112, height: 16 },  // from ground (L2: lowered 1 tile → 96px rise, comfortably reachable)
       // Final stretch
       { x: 4560, y: 428, width: 128, height: 16 },  // from ground
       { x: 4808, y: 360, width: 128, height: 16 },  // from #10 (edge gap 120px)
-      { x: 5080, y: 396, width: 112, height: 16 },  // from #11 (edge gap 152px down) or ground
+      { x: 5080, y: 428, width: 112, height: 16 },  // from ground (L2: lowered 1 tile → 96px rise, comfortably reachable)
       { x: 5880, y: 440, width: 160, height: 16 },  // from ground — home stretch
     ],
     endMarkerX: 6300,
-    // Enemy spawn positions (x, y center). y=508 = on ground (groundY 524 − half enemy height 16)
+    // Enemy spawns (x, feet-y). y = groundY (524) so feet rest on the ground. Each picks a
+    // Zombie_N sheet; the mix covers all four types.
     enemies: [
       // Solo enemies
-      { x: 1100, y: 508 },
-      { x: 2500, y: 508 },
-      { x: 4700, y: 508 },
-      // Spawn cluster (3 grouped near the staggered climb)
-      { x: 3360, y: 508 },
-      { x: 3440, y: 508 },
-      { x: 3520, y: 508 },
+      { x: 1100, y: 524, type: 'Zombie_1' },
+      { x: 2500, y: 524, type: 'Zombie_2' },
+      { x: 4700, y: 524, type: 'Zombie_3' },
+      // Spawn cluster (3 grouped near the staggered climb) — includes Zombie_4
+      { x: 3360, y: 524, type: 'Zombie_4' },
+      { x: 3440, y: 524, type: 'Zombie_1' },
+      { x: 3520, y: 524, type: 'Zombie_2' },
     ],
   },
 
@@ -159,6 +162,20 @@ export const CONFIG = {
   endMarker: {
     width: 24,
     height: 80,
+  },
+
+  // Tileset (Tileset.png, 32×32, 17×12 grid → indices 0..203). The swap-point for
+  // terrain art: chosen by rendering an indexed overlay. groundTop/groundFill are
+  // cycled across columns for a natural, seam-free forest floor; platforms reuse the
+  // grass family. Solid = the collidable set (the one-way callback refines by row).
+  TILES: {
+    size: 32,
+    groundTop: [6, 7, 8],      // grass surface, cycled per column
+    groundFill: [35, 36, 37],  // solid dirt/rock body beneath
+    platformL: 6,              // 1-tile floating platform: left / middle / right
+    platformMid: 7,
+    platformR: 8,
+    solid: [6, 7, 8, 35, 36, 37], // indices marked collidable via setCollision()
   },
 };
 
@@ -205,6 +222,19 @@ export const ASSETS = {
     ['assets/platformer-game-tileset-pixel-art/PNG/Background/x32/Flora2x32.png',  0.45],
     ['assets/platformer-game-tileset-pixel-art/PNG/Background/x32/Flora1x32.png',  0.70],
   ],
+};
+
+// Per-type zombie physics bodies — explicit, NOT derived from the 128px sprite.
+// Measured from each Zombie_N/Idle.png (all ~2 tiles, feet at frame-y 127, torso ~28px).
+// Body = torso/legs only (Zombie_4's reaching arms extend outside it). offsetX centers the
+// body on each character; offsetY (65) sets the 62-tall body's base at the feet (65+62=127).
+// facesLeft: false — all four sheets face RIGHT by default (verified), so flip is standard.
+// Tuned against the physics-debug overlay.
+export const ZOMBIE_BODY = {
+  Zombie_1: { width: 28, height: 62, originX: 0.5, originY: 1.0, offsetX: 48, offsetY: 65, facesLeft: false },
+  Zombie_2: { width: 28, height: 62, originX: 0.5, originY: 1.0, offsetX: 44, offsetY: 65, facesLeft: false },
+  Zombie_3: { width: 28, height: 62, originX: 0.5, originY: 1.0, offsetX: 48, offsetY: 65, facesLeft: false },
+  Zombie_4: { width: 28, height: 62, originX: 0.5, originY: 1.0, offsetX: 49, offsetY: 65, facesLeft: false },
 };
 
 // Player physics body — set explicitly, NOT derived from the 128px sprite.

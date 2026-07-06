@@ -1,5 +1,5 @@
 import { Scene, Input } from 'phaser';
-import { CONFIG } from '../config.js';
+import { CONFIG, ASSETS } from '../config.js';
 import { Player } from '../entities/Player.js';
 import { Bullet } from '../entities/Bullet.js';
 import { Enemy } from '../entities/Enemy.js';
@@ -16,37 +16,21 @@ export class GameScene extends Scene {
   }
 
   create() {
-    const { width, height, backgroundColor, palette, LEVEL, ground, endMarker } = CONFIG;
+    const { LEVEL, endMarker, palette } = CONFIG;
 
-    // Dark background fill — spans the full level width so it doesn't vanish when the camera scrolls
-    this.add.rectangle(LEVEL.worldWidth / 2, LEVEL.worldHeight / 2, LEVEL.worldWidth, LEVEL.worldHeight, backgroundColor);
+    // Parallax forest background — 4 camera-pinned layers scrolling at different rates
+    this.buildParallax();
 
     // World bounds (physics + camera clamping)
     this.physics.world.setBounds(0, 0, LEVEL.worldWidth, LEVEL.worldHeight);
 
-    // --- Level geometry (static physics group) ---
-    this.platforms = this.physics.add.staticGroup();
+    // Forest terrain — real tileset ground + one-way platforms (sets this.terrain, this.groundRow)
+    this.buildTerrain();
 
-    // Ground — a long thin rectangle across the full level width
-    const groundW = LEVEL.worldWidth;
-    const groundH = ground.thickness;
-    const groundY = LEVEL.groundY + groundH / 2;
-    const groundRect = this.add.rectangle(groundW / 2, groundY, groundW, groundH, hexToInt(palette.platforms));
-    this.platforms.add(groundRect);
-    groundRect.body.updateFromGameObject(); // sync physics body to display size
-
-    // Hand-authored platforms
-    for (const p of LEVEL.platforms) {
-      const plat = this.add.rectangle(p.x, p.y + p.height / 2, p.width, p.height, hexToInt(palette.platforms));
-      this.platforms.add(plat);
-      plat.body.updateFromGameObject();
-    }
-
-    // End marker — tall bright rectangle on the far right
+    // End marker — tall bright rectangle on the far right (visual; win trigger uses endMarkerX)
     const markerX = LEVEL.endMarkerX;
     const markerY = LEVEL.groundY - endMarker.height / 2;
     this.add.rectangle(markerX, markerY, endMarker.width, endMarker.height, hexToInt(palette.bullet));
-    // Not in the physics group — it's visual-only for now (Step 6 adds win trigger)
 
     // --- Bullet pool (created before Player so we can pass it in) ---
     this.bullets = this.physics.add.group({
@@ -58,8 +42,8 @@ export class GameScene extends Scene {
     // --- Player ---
     this.player = new Player(this, LEVEL.spawn.x, LEVEL.spawn.y, this.bullets);
 
-    // --- Collisions ---
-    this.physics.add.collider(this.player, this.platforms);
+    // --- Collisions (one-way platforms via process callback; ground fully solid) ---
+    this.physics.add.collider(this.player, this.terrain, null, this.terrainProcess, this);
 
     // --- Enemy pool (created after Player so spawn loop can set enemy.player) ---
     this.enemies = this.physics.add.group({
@@ -68,17 +52,17 @@ export class GameScene extends Scene {
       runChildUpdate: true, // calls preUpdate on active enemies each frame
     });
 
-    // Spawn each enemy from level config
+    // Spawn each enemy from level config (each entry chooses a Zombie_N type)
     for (const pos of LEVEL.enemies) {
-      const enemy = this.enemies.get(pos.x, pos.y, CONFIG.TEXTURE_MAP.enemy);
+      const enemy = this.enemies.get(pos.x, pos.y);
       if (enemy) {
-        enemy.spawn(pos.x, pos.y);
+        enemy.spawn(pos.x, pos.y, pos.type);
         enemy.player = this.player; // AI targeting reference
       }
     }
 
     // Enemy collisions & overlaps
-    this.physics.add.collider(this.enemies, this.platforms);
+    this.physics.add.collider(this.enemies, this.terrain, null, this.terrainProcess, this);
     // Player-enemy overlap — pushes player away once per contact (gated on knockbackTimer).
     this.physics.add.overlap(this.player, this.enemies, this.onPlayerTouchEnemy, null, this);
     this.physics.add.overlap(this.bullets, this.enemies, this.onBulletHitEnemy, null, this);
@@ -173,13 +157,14 @@ export class GameScene extends Scene {
       }
     }
 
-    // Debug: right-click spawns an enemy at the pointer position
+    // Debug: right-click spawns a random-type zombie at the pointer position
     if (this.debugOn && this.input.activePointer.rightButtonDown()) {
       const worldX = this.input.activePointer.worldX;
       const worldY = this.input.activePointer.worldY;
-      const enemy = this.enemies.get(worldX, worldY, CONFIG.TEXTURE_MAP.enemy);
+      const enemy = this.enemies.get(worldX, worldY);
       if (enemy) {
-        enemy.spawn(worldX, worldY);
+        const types = ['Zombie_1', 'Zombie_2', 'Zombie_3', 'Zombie_4'];
+        enemy.spawn(worldX, worldY, types[Math.floor(Math.random() * types.length)]);
         enemy.player = this.player;
       }
     }
@@ -189,6 +174,82 @@ export class GameScene extends Scene {
       ? CONFIG.camera.lookAhead
       : -CONFIG.camera.lookAhead;
     this.cameras.main.setFollowOffset(lookX, CONFIG.camera.followOffsetY);
+
+    // Parallax: scroll each pinned bg layer's texture proportional to camera scroll
+    const sx = this.cameras.main.scrollX;
+    for (const { ts, factor } of this.bgLayers) ts.tilePositionX = sx * factor;
+  }
+
+  /**
+   * Build the 4-layer parallax background. Each layer is a camera-pinned tileSprite
+   * (scrollFactor 0), bottom-aligned to the view; its texture scrolls in update() at the
+   * layer's parallax factor (far/Sky ~0.10 barely moves, near/Flora1 ~0.70 moves most).
+   */
+  buildParallax() {
+    this.bgLayers = ASSETS.bgLayers.map(([, factor], i) => {
+      const ts = this.add
+        .tileSprite(0, CONFIG.height, CONFIG.width, 544, `bg-layer-${i}`)
+        .setOrigin(0, 1)          // bottom-left anchor at the view's bottom
+        .setScrollFactor(0)       // pinned to the camera; we scroll the texture instead
+        .setDepth(-10 + i);       // behind the world, far → near
+      return { ts, factor };
+    });
+  }
+
+  /**
+   * Build the forest terrain as a code-authored Phaser tilemap:
+   *   - a continuous grass-top ground (fully solid) across the whole world, and
+   *   - the tuned platform layout snapped to the 32px grid (one-way, land-on-top-only).
+   * The layer is offset vertically so the grass surface lands exactly on LEVEL.groundY,
+   * leaving spawn/enemy/end-marker data untouched. Sets this.terrain and this.groundRow.
+   */
+  buildTerrain() {
+    const { LEVEL, TILES } = CONFIG;
+    const T = TILES.size;
+    const cols = Math.ceil(LEVEL.worldWidth / T);
+    const rows = Math.ceil((LEVEL.worldHeight + T * 3) / T);
+    this.groundRow = Math.round(LEVEL.groundY / T);   // grass-surface row
+    const layerY = LEVEL.groundY - this.groundRow * T; // shift grid so surface == groundY (524)
+
+    const map = this.make.tilemap({ tileWidth: T, tileHeight: T, width: cols, height: rows });
+    const tileset = map.addTilesetImage('tiles', 'tileset', T, T);
+    const layer = map.createBlankLayer('terrain', tileset, 0, layerY, cols, rows, T, T);
+    this.terrain = layer;
+
+    // Continuous ground: grass surface row + solid fill all the way down (indices cycle per column).
+    const { groundTop, groundFill } = TILES;
+    for (let c = 0; c < cols; c++) {
+      layer.putTileAt(groundTop[c % groundTop.length], c, this.groundRow);
+      for (let r = this.groundRow + 1; r < rows; r++) {
+        layer.putTileAt(groundFill[c % groundFill.length], c, r);
+      }
+    }
+
+    // Floating platforms: snap each rect to grid columns/row, place 1-tile grass tiles L/mid/R.
+    for (const p of LEVEL.platforms) {
+      const left = Math.round((p.x - p.width / 2) / T);
+      const right = Math.round((p.x + p.width / 2) / T) - 1; // inclusive last column
+      const row = Math.round((p.y - layerY) / T);            // snap platform top to a grid row
+      for (let c = left; c <= right; c++) {
+        const idx = c === left ? TILES.platformL : c === right ? TILES.platformR : TILES.platformMid;
+        layer.putTileAt(idx, c, row);
+      }
+    }
+
+    layer.setCollision(TILES.solid); // mark solids collidable; terrainProcess refines to one-way
+  }
+
+  /**
+   * Collider process callback. Ground rows (>= groundRow) are fully solid. Floating
+   * platform tiles are one-way: collide only when the body is descending AND its previous
+   * bottom was above the tile top — so you jump up through them and land on top, never
+   * bonking your head or clipping a side.
+   */
+  terrainProcess(obj, tile) {
+    if (tile.y >= this.groundRow) return true; // ground: fully solid
+    const b = obj.body;
+    const tileTop = this.terrain.y + tile.pixelY; // world Y of the tile's top (no allocation)
+    return b.velocity.y >= 0 && b.prev.y + b.height <= tileTop + 2;
   }
 
   /**
@@ -198,7 +259,7 @@ export class GameScene extends Scene {
    * Damage is handled separately by the enemy's ATTACK state.
    */
   onPlayerTouchEnemy(player, enemy) {
-    if (!player.active || !enemy.active || player.dead) return;
+    if (!player.active || !enemy.active || player.dead || enemy.state === 'DEAD') return;
     // Only fire once per contact — knockbackTimer prevents re-triggering
     if (player.knockbackTimer > 0) return;
 
@@ -214,7 +275,7 @@ export class GameScene extends Scene {
    * Deactivate the bullet; deal damage to the enemy.
    */
   onBulletHitEnemy(bullet, enemy) {
-    if (!bullet.active || !enemy.active) return;
+    if (!bullet.active || !enemy.active || enemy.state === 'DEAD') return;
 
     // Impact particles at bullet position
     this.impactEmitter.explode(CONFIG.particles.impact.count, bullet.x, bullet.y);
