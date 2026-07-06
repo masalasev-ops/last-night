@@ -31,4 +31,15 @@ export function registerAnimations(scene) {
       });
     }
   }
+
+  // Pickups (L5) — a looping shimmer per collectible sheet (e.g. 'pickup-chest').
+  for (const [name, { frames, fps }] of Object.entries(ASSETS.pickups)) {
+    const key = `pickup-${name}`;
+    scene.anims.create({
+      key,
+      frames: scene.anims.generateFrameNumbers(key, { start: 0, end: frames - 1 }),
+      frameRate: fps,
+      repeat: -1,
+    });
+  }
 }

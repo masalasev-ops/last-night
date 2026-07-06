@@ -301,4 +301,13 @@ export class Player extends Physics.Arcade.Sprite {
       if (this.active && !this.dead) this.clearTint();
     });
   }
+
+  /**
+   * Restore health from a pickup (L5). Clamped to playerMaxHealth (no overheal); ignored when dead.
+   * @param {number} amount  HP to add
+   */
+  heal(amount) {
+    if (this.dead) return;
+    this.health = Math.min(CONFIG.playerMaxHealth, this.health + amount);
+  }
 }

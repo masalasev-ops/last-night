@@ -62,6 +62,25 @@ export const CONFIG = {
     corpseLinger: 1.5, // s — how long the dead pose holds on the ground before pooling out
   },
 
+  // Pickup (L5). One health chest placed from level data (LEVEL.pickups). `heal` is the HP restored;
+  // `body` is the explicit overlap box (art never drives the hitbox — golden rule 4); `scale` fits the
+  // 64px chest art to the world; `bob` is a gentle idle float so it reads as collectible.
+  pickup: {
+    heal: 40,                       // HP restored on collect
+    body: { width: 28, height: 30 },
+    scale: 0.6,
+    animFps: 8,                     // chest shimmer loop
+    bob: { amp: 6, speed: 2 },      // px amplitude, radians/sec
+  },
+
+  // Intro beat (L5) — a short, non-blocking title card on level start (camera fades in, text fades out).
+  intro: {
+    fadeMs: 600,   // camera fade-in + text fade-out duration
+    holdMs: 1800,  // how long the title holds before it fades
+    title: 'LAST NIGHT',
+    subtitle: 'Reach the far side of the forest',
+  },
+
   // Camera
   camera: {
     lookAhead: 80, // px ahead of player
@@ -84,8 +103,8 @@ export const CONFIG = {
   },
 
   // Vignette camera filter — cam.filters.external.addVignette(x, y, radius, strength, color).
-  // Provides the dark oval framing + edge mood (the "filter working" deliverable).
-  vignette: { x: 0.5, y: 0.5, radius: 0.5, strength: 0.22, color: 0x000000 },
+  // The dark oval edge-framing. enabled: false → no circular porthole; just the flat even tint.
+  vignette: { enabled: true, x: 0.5, y: 0.5, radius: 0.58, strength: 0.20, color: 0x000000 },
 
   // Night atmosphere (L4). The darkness overlay fills the screen with darkColor@darkAlpha and
   // erases a body glow (glowScale) + a gun flashlight cone (coneScale). glowScale is generous
@@ -93,16 +112,19 @@ export const CONFIG = {
   // amount — left at 0: even small amounts darken the whole scene to near-black, so the mood
   // comes from the vignette filter + dark overlay instead. Tuned together, by eye.
   //
-  // enabled: master switch. OFF by default — the darkness overlay hid the player/zombies too much
-  // to enjoy the level. Flip to true to bring back the full night mode (vignette + dark overlay +
-  // flashlight cone + fog); all of it stays wired and re-enableable.
+  // enabled: master switch. L5 re-enables it at a GENTLE level — a light nighttime tint + soft
+  // vignette + player glow/flashlight, kept bright enough that the background and both the soldier
+  // and the zombies stay clearly visible (the earlier over-dark version hid them). Set false for a
+  // fully bright forest; all of it stays wired either way.
   atmosphere: {
-    enabled: false,       // master switch for the whole night-atmosphere stack (see note above)
+    enabled: true,        // master switch for the whole night-atmosphere stack (see note above)
+    flashlight: true,    // the moving lit "window" (player glow + gun flashlight cone). false = a flat,
+                          // uniform mild-dark tint everywhere instead of a torch-in-the-dark cutout.
     night: 0,             // ColorMatrix.night() grade — 0 = off (over-darkens; see note above)
     darkColor: 0x05070f,  // darkness overlay fill (near-black navy)
-    darkAlpha: 0.35,      // overlay opacity — light nighttime tint; background stays clearly visible
-    glowScale: 1.8,       // ambient player-body glow size (× the __LIGHT_RADIAL texture)
-    coneScale: 3.0,       // flashlight cone reach (× the __LIGHT_CONE texture)
+    darkAlpha: 0.40,      // overlay opacity — light nighttime tint; background stays clearly visible
+    glowScale: 1.8,       // ambient player-body glow size (only used when flashlight: true)
+    coneScale: 3.0,       // flashlight cone reach (only used when flashlight: true)
     fog: { alpha: 0.13, scale: 1.5, speedMin: 8, speedMax: 24, lifespan: 9000, frequency: 650 },
   },
 
@@ -132,6 +154,7 @@ export const CONFIG = {
     PLAYER: { key: 'placeholder-player', width: 24, height: 40 },
     ENEMY: { key: 'placeholder-enemy', width: 24, height: 32 },
     BULLET: { key: 'placeholder-bullet', width: 6, height: 4 },
+    PICKUP: { key: 'placeholder-pickup', width: 28, height: 28 }, // green medic box fallback
   },
 
   // Single map of entity type → texture key. This is the future art swap-point
@@ -141,6 +164,7 @@ export const CONFIG = {
     player: 'player-idle', // real Soldier_1 art (swap-point flipped in L1)
     enemy: 'placeholder-enemy',
     bullet: 'placeholder-bullet',
+    pickupHealth: 'pickup-chest', // real chest art (falls back to placeholder-pickup if unloaded)
   },
 
   // World / level (hand-authored platform layout) — coordinates doubled from the POC.
@@ -174,6 +198,12 @@ export const CONFIG = {
       { x: 5880, y: 440, width: 160, height: 16 },  // from ground — home stretch
     ],
     endMarkerX: 6300,
+    // Health pickups (L5). x, feet-y (y = groundY so the chest rests on the ground). Placed just past
+    // the 3-zombie cluster / staggered climb (x≈3360–3520) where a hurt player arrives. Reachability
+    // + natural-arrival confirmed in the human playtest (§H); relocate here if the level re-tune moved it.
+    pickups: [
+      { x: 3650, y: 524, type: 'health' },
+    ],
     // Enemy spawns (x, feet-y). y = groundY (524) so feet rest on the ground. Each picks a
     // Zombie_N sheet; the mix covers all four types.
     enemies: [
@@ -246,6 +276,11 @@ export const ASSETS = {
       Zombie_4: { idle: 7, walk: 12, attack: 10, hurt: 4, dead: 5 },
     },
     fps: { idle: 6, walk: 10, attack: 12, hurt: 12, dead: 8 },
+  },
+  // Pickups (L5) — collectible art from the platformer tileset pack. chest.png is 384×64 → 6 frames
+  // of 64×64 (a shimmer loop). Loaded as a spritesheet; the `pickup-chest` anim is registered from this.
+  pickups: {
+    chest: { path: 'assets/platformer-game-tileset-pixel-art/PNG/chest.png', frame: 64, frames: 6, fps: 8 },
   },
   tileset: 'assets/platformer-game-tileset-pixel-art/PNG/Tileset.png',
   bgLayers: [

@@ -3,6 +3,7 @@ import { CONFIG, ASSETS, PLAYER_BODY } from '../config.js';
 import { Player } from '../entities/Player.js';
 import { Bullet } from '../entities/Bullet.js';
 import { Enemy } from '../entities/Enemy.js';
+import { Pickup } from '../entities/Pickup.js';
 
 /**
  * GameScene — the main gameplay scene.
@@ -95,6 +96,14 @@ export class GameScene extends Scene {
       emitting: false,
     });
 
+    // --- Pickups (L5): health chests from level data; overlap heals the player ---
+    this.pickups = this.physics.add.group({ classType: Pickup, runChildUpdate: true });
+    for (const pos of LEVEL.pickups ?? []) {
+      const pickup = this.pickups.get(pos.x, pos.y);
+      if (pickup) pickup.spawn(pos.x, pos.y, pos.type);
+    }
+    this.physics.add.overlap(this.player, this.pickups, this.onPickup, null, this);
+
     // --- Atmosphere (L4) — gated behind the master switch. Off by default: the darkness overlay
     // hid the player/zombies too much to enjoy the level. When enabled it re-adds the full night
     // mode (vignette + optional night grade + darkness/flashlight overlay + fog). ---
@@ -102,20 +111,31 @@ export class GameScene extends Scene {
     if (CONFIG.atmosphere.enabled) {
       const cam = this.cameras.main;
       const v = CONFIG.vignette;
-      cam.filters.external.addVignette(v.x, v.y, v.radius, v.strength, v.color);
+      if (v.enabled) cam.filters.external.addVignette(v.x, v.y, v.radius, v.strength, v.color);
       // Night ColorMatrix is opt-in — even low amounts over-darken, so it's off by default
       // (the vignette filter + dark overlay carry the mood). Guarded so it stays re-enableable.
       if (CONFIG.atmosphere.night > 0) {
         cam.filters.internal.addColorMatrix().colorMatrix.night(CONFIG.atmosphere.night);
       }
 
-      // Darkness + flashlight overlay: a camera-pinned RenderTexture filled near-black each
-      // frame, with the player glow + gun flashlight cone erased into it (see updateLighting).
-      this.darkness = this.add
-        .renderTexture(0, 0, CONFIG.width, CONFIG.height)
-        .setOrigin(0, 0)
-        .setScrollFactor(0)
-        .setDepth(1000);
+      // Darkness overlay. Two modes:
+      //   flashlight: true  → a camera-pinned RenderTexture re-filled each frame with the player glow
+      //                       + gun cone erased into it (a moving lit "window"; see updateLighting).
+      //   flashlight: false → a flat, static uniform dark tint (no moving cutout). this.darkness stays
+      //                       null so update() skips the per-frame lighting redraw.
+      if (CONFIG.atmosphere.flashlight) {
+        this.darkness = this.add
+          .renderTexture(0, 0, CONFIG.width, CONFIG.height)
+          .setOrigin(0, 0)
+          .setScrollFactor(0)
+          .setDepth(1000);
+      } else {
+        this.add
+          .rectangle(0, 0, CONFIG.width, CONFIG.height, CONFIG.atmosphere.darkColor, CONFIG.atmosphere.darkAlpha)
+          .setOrigin(0, 0)
+          .setScrollFactor(0)
+          .setDepth(1000);
+      }
 
       // Fog: soft drifting puffs just beneath the darkness, so the flashlight catches them.
       const fog = CONFIG.atmosphere.fog;
@@ -145,6 +165,9 @@ export class GameScene extends Scene {
     this.cameras.main.setDeadzone(60, 30);
     // Initial follow offset (directionally updated in update())
     this.cameras.main.setFollowOffset(CONFIG.camera.lookAhead, CONFIG.camera.followOffsetY);
+
+    // --- Intro beat (L5): fade the view in; UIScene shows the title card (non-blocking) ---
+    this.cameras.main.fadeIn(CONFIG.intro.fadeMs);
 
     console.log('[GameScene] ready');
   }
@@ -329,6 +352,23 @@ export class GameScene extends Scene {
     player.body.setVelocityX(CONFIG.knockback * 1.2 * dir);
     player.body.setVelocityY(-CONFIG.knockback * 1.0);
     player.knockbackTimer = CONFIG.knockbackDuration;
+  }
+
+  /**
+   * Player-pickup overlap callback (L5).
+   * Health chest: collect + heal ONLY if the player isn't at full HP — otherwise leave it be.
+   * The overlap fires every frame, so an untouched chest is simply offered again when the player
+   * returns hurt (it is NOT consumed on first contact at full health).
+   */
+  onPickup(player, pickup) {
+    if (!player.active || !pickup.active || player.dead) return;
+
+    if (pickup.type === 'health') {
+      if (player.health >= CONFIG.playerMaxHealth) return; // full HP → leave the chest for later
+      player.heal(CONFIG.pickup.heal);
+      this.impactEmitter.explode(CONFIG.particles.impact.count, pickup.x, pickup.y); // collect "pop"
+      pickup.collect();
+    }
   }
 
   /**

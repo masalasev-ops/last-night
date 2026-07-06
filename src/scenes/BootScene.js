@@ -48,6 +48,10 @@ export class BootScene extends Scene {
       }
     }
 
+    // Pickup collectibles (L5) — chest.png is a 6-frame 64×64 shimmer sheet
+    const chest = ASSETS.pickups.chest;
+    this.load.spritesheet('pickup-chest', chest.path, { frameWidth: chest.frame, frameHeight: chest.frame });
+
     // Terrain tileset (image for now; L2 decides tilemap vs. manual tiling)
     this.load.image('tileset', ASSETS.tileset);
 
@@ -60,7 +64,7 @@ export class BootScene extends Scene {
     this.generateLightTextures();
     registerAnimations(this);
 
-    // DoD verification: confirm every animation registered (9 player + 20 zombie = 29)
+    // DoD verification: confirm every animation registered (9 player + 20 zombie + 1 pickup = 30)
     console.log(
       `[BootScene] Animations registered: ${this.anims.anims.size} →`,
       [...this.anims.anims.keys()],
@@ -132,6 +136,30 @@ export class BootScene extends Scene {
     g.fillStyle(hexToInt(palette.blood), 1);
     g.fillRect(0, 0, 8, 8);
     g.generateTexture('__PARTICLE_BLOOD', 8, 8);
+    g.destroy();
+
+    // --- Pickup fallback (L5): a green medic box with a white cross (used if chest art is missing) ---
+    g = this.make.graphics({ x: 0, y: 0, add: false });
+    const pk = placeholder.PICKUP;
+    g.fillStyle(0x2f9e44, 1);
+    g.fillRect(0, 0, pk.width, pk.height);
+    g.fillStyle(0xffffff, 1);
+    const cx = pk.width / 2, cy = pk.height / 2, arm = pk.width * 0.3, thick = pk.width * 0.16;
+    g.fillRect(cx - thick / 2, cy - arm, thick, arm * 2); // vertical bar
+    g.fillRect(cx - arm, cy - thick / 2, arm * 2, thick); // horizontal bar
+    g.generateTexture(pk.key, pk.width, pk.height);
+    g.destroy();
+
+    // --- Health-cross marker (L5): floats above the chest so it reads as HEALTH, not generic loot ---
+    g = this.make.graphics({ x: 0, y: 0, add: false });
+    const S = 18, t = 6; // marker size, cross-bar thickness
+    g.fillStyle(0x0a0a0f, 1); // dark outline for contrast on any background
+    g.fillRect(S / 2 - t / 2 - 2, 0, t + 4, S);
+    g.fillRect(0, S / 2 - t / 2 - 2, S, t + 4);
+    g.fillStyle(0x3ad06a, 1); // bright green cross
+    g.fillRect(S / 2 - t / 2, 2, t, S - 4);
+    g.fillRect(2, S / 2 - t / 2, S - 4, t);
+    g.generateTexture('__HEALTH_CROSS', S, S);
     g.destroy();
 
     console.log('[BootScene] Placeholder textures generated.');

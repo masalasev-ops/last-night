@@ -55,7 +55,35 @@ export class UIScene extends Scene {
     });
     this.debugText.setVisible(false);
 
+    this.showIntro();
+
     console.log('[UIScene] ready');
+  }
+
+  /**
+   * Intro beat (L5): a non-blocking title card shown on level start — title + subtitle centred,
+   * held for intro.holdMs, then faded out over intro.fadeMs and destroyed. Separate from statusText
+   * so the win/death overlays are unaffected. Re-shown on restart (fresh run).
+   */
+  showIntro() {
+    const { intro, width, height, hud } = CONFIG;
+    const mk = (y, size, text, color) =>
+      this.add
+        .text(width / 2, y, text, { fontFamily: hud.font.family, fontSize: size, color, align: 'center' })
+        .setOrigin(0.5)
+        .setStroke(hud.stroke.color, hud.stroke.thickness + 1)
+        .setDepth(10);
+    const title = mk(height / 2 - 24, 40, intro.title, '#e8e8e8');
+    const subtitle = mk(height / 2 + 20, 16, intro.subtitle, '#9aa0ac');
+
+    this.time.delayedCall(intro.holdMs, () => {
+      this.tweens.add({
+        targets: [title, subtitle],
+        alpha: 0,
+        duration: intro.fadeMs,
+        onComplete: () => { title.destroy(); subtitle.destroy(); },
+      });
+    });
   }
 
   /** Called every frame — reads live player state from GameScene. */
