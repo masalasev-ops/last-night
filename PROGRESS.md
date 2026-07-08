@@ -8,7 +8,7 @@ slice; `docs/PHASE3_PLAN.md` + per-milestone specs for Phase 3); this file track
 | Milestone | What it delivered | Status |
 |-----------|-------------------|--------|
 | **L0 — Resolution + asset pipeline** | 960×540 game; load all real spritesheets/tileset/backgrounds; register animations; placeholder fallback intact. | ✅ Done |
-| **L1 — Animated gunman** | Soldier_1 player with a full animation controller; **movement-driven** facing; bullets emit from the gun tip toward the cursor. | ✅ Done |
+| **L1 — Animated gunman** | Soldier_1 player with a full animation controller; **movement-driven** facing; bullets fly toward the cursor. *(At delivery they spawned from the gun tip; **P3.4** moved the spawn to the player centre at gun height so point-blank shots connect — the muzzle flash still fires from the tip.)* | ✅ Done |
 | **L2 — Forest level** | Multi-layer parallax + real 32px tileset ground; **one-way** floating platforms; follow camera + bounds; traversable start→end. | ✅ Done |
 | **L3 — Zombies** | 4 zombie types via a 5-state FSM (patrol/chase/attack/hurt/dead) with correct per-type facing, corpse linger, no attack stutter. | ✅ Done |
 | **L4 — Atmosphere + HUD** | Vignette + darkness/flashlight overlay + fog; upgraded HUD (health bar + ammo + weapon). | ✅ Done |
