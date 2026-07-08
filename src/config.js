@@ -80,8 +80,18 @@ export const CONFIG = {
       firingRange: 420,                        // px — max distance it will spit from
       attackCooldown: 1.6,                     // s between spits
       scrapDrop: { min: 2, max: 4 },           // unused until P3.3 (scrap economy)
+      // AI art is drawn ~3 tiles tall (95px) vs the ~2-tile (67px) zombies; scale it down to sit in
+      // the roster. 0.78 → ~74px (~1.1× a zombie): a touch bulkier, not towering. The body + spit
+      // muzzle scale with this automatically (Enemy.spawn / GameScene.spawnAcid) — tune this one value.
+      artScale: 0.78,
       // Explicit body fitted to the 40×52 placeholder blob (feet at frame bottom). Art never drives it.
+      // Used only on the placeholder-fallback path; the real 128px sprite uses ACID_SPITTER_BODY below.
       body: { width: 28, height: 48, originX: 0.5, originY: 1.0, offsetX: 6, offsetY: 4, facesLeft: false },
+      // Spit origin, in texture px from the feet-origin — the sprite's mouth. Decoupled from the
+      // hitbox so retuning ACID_SPITTER_BODY never moves the muzzle (GameScene.spawnAcid reads this).
+      // x:0 keeps the lob's horizontal origin on centre (identical arc to the placeholder). y from the
+      // idle-frame measurement (mouth ≈ 70px above the feet).
+      muzzleOffset: { x: 0, y: -70 },
     },
   },
 
@@ -204,7 +214,7 @@ export const CONFIG = {
     enemy: 'placeholder-enemy',
     bullet: 'placeholder-bullet',
     pickupHealth: 'pickup-chest', // real chest art (falls back to placeholder-pickup if unloaded)
-    spitter: 'spitter', // P3.1 placeholder blob — point at a real Spitter sheet when art is ready
+    spitter: 'Spitter-idle', // P3.1 real Spitter sheet (falls back to the 'spitter' placeholder blob if unloaded)
     acid: 'acid',       // P3.1 acid glob
   },
 
@@ -321,6 +331,21 @@ export const ASSETS = {
     },
     fps: { idle: 6, walk: 10, attack: 12, hurt: 12, dead: 8 },
   },
+  // Ranged Spitter (P3.1) — AI-generated 128×128 art, assembled into one horizontal strip per state
+  // in public/assets/Spitter/ (east-facing; flipped in code for west). Same [file, frames, fps, loop]
+  // shape as ASSETS.player. `dead` (not `death`) matches the enemy convention Enemy.js plays.
+  spitter: {
+    dir: 'assets/Spitter',
+    frame: 128,
+    anims: {
+      // state: [file, frameCount, fps, loop]
+      idle:   ['idle.png',   4,  6, true],
+      walk:   ['walk.png',   8, 10, true],
+      attack: ['attack.png', 9, 12, false],
+      hurt:   ['hurt.png',   6, 12, false],
+      dead:   ['dead.png',   7,  8, false],
+    },
+  },
   // Pickups (L5) — collectible art from the platformer tileset pack. chest.png is 384×64 → 6 frames
   // of 64×64 (a shimmer loop). Loaded as a spritesheet; the `pickup-chest` anim is registered from this.
   pickups: {
@@ -347,6 +372,17 @@ export const ZOMBIE_BODY = {
   Zombie_2: { width: 28, height: 62, originX: 0.5, originY: 1.0, offsetX: 44, offsetY: 65, facesLeft: false },
   Zombie_3: { width: 28, height: 62, originX: 0.5, originY: 1.0, offsetX: 48, offsetY: 65, facesLeft: false },
   Zombie_4: { width: 28, height: 62, originX: 0.5, originY: 1.0, offsetX: 49, offsetY: 65, facesLeft: false },
+};
+
+// Ranged Spitter physics body — explicit, fitted to the REAL 128px sheet (never the frame size).
+// Measured from Spitter/idle.png frame 0: opaque region x45–84, y19–114 → center-x ≈ 64, feet at
+// frame-y 114 (the bloated spitter sits higher in its frame than the zombies, which reach y127).
+//   originY 0.89 (= 114/128) puts the feet-origin on the opaque feet so it rests on the ground
+//   (not floating). Body is the torso+legs core (y44–114): offsetY 44 sets its base at the feet
+//   (44 + 70 = 114); offsetX 48 centers the 32-wide body on the frame center (48 + 16 = 64) so
+//   flipX never shifts the hitbox. Head/arms extend outside it (as with Zombie_4). Debug-overlay tuned.
+export const ACID_SPITTER_BODY = {
+  width: 32, height: 70, originX: 0.5, originY: 0.89, offsetX: 48, offsetY: 44, facesLeft: false,
 };
 
 // Player physics body — set explicitly, NOT derived from the 128px sprite.

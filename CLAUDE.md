@@ -33,6 +33,13 @@ The **POC** (`docs/BUILD.md`) and the **Phase 2 one-level slice** (`docs/BUILD_P
 - **New Phase 3 enemies/bosses are AI-generated** to match the CraftPix style (see the AI Prompt Kit), built **placeholder-first** and dropped in via the swap-point.
 - Do NOT load `COUPON.*`, `*.psd`, `*.url`, `Licens.txt`, the garbled `#U251c…÷2` folder, or the garbage-named `Map …tmx`.
 
+### AI-art pipeline (PixelLab → game) — worked example: the Spitter (`ENEMIES.Spitter`, `ACID_SPITTER_BODY`)
+Generate via the PixelLab MCP, then assemble + drop in through the swap-point. Hard-won gotchas:
+- **Raw vs shipped.** Per-frame PixelLab PNGs land in `public/assets/ai-generated/<name>/` (git-**ignored**, regenerable). Assemble them into one horizontal `128×128` strip per state in `public/assets/<Name>/` (git-**tracked** — that's the real art). Registry rows mirror `ASSETS.player`; enemy states are `idle/walk/attack/hurt/dead` (`dead`, not `death` — `Enemy.js` plays `${type}-dead`).
+- **Baseline-align on assembly.** PixelLab template anims do **not** share a ground line (e.g. `falling_backward`'s prone frames sit ~29px high) → a floating/shrunken corpse. When building the strip, shift every frame so its lowest opaque pixel lands on one baseline (the idle feet line) so all poses stay grounded.
+- **Scale to ~2 tiles.** AI art often draws ~3 tiles (95px) vs the ~2-tile (67px) roster. Set a per-enemy `artScale` (Spitter: 0.78); `Enemy.spawn` calls `setScale`, and Arcade scales the **body size + offset** by it around the feet origin on the next step (so hitbox stays fitted + grounded). Spit muzzle (`GameScene.spawnAcid`) scales by `enemy.scaleY`. Body still comes from an explicit `*_BODY` const (golden rule 4), measured from the idle frame's opaque bbox.
+- **Fallback stays intact.** Gate real-vs-placeholder on **texture** existence (`textures.exists`), not anim (anims register unconditionally). The blob fallback sets `this.animated = false` so the controller won't swap its texture via a registered anim.
+
 ## Project structure
 ```
 src/

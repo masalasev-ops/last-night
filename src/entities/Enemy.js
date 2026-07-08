@@ -1,5 +1,5 @@
 import { Physics } from 'phaser';
-import { CONFIG, ZOMBIE_BODY } from '../config.js';
+import { CONFIG, ZOMBIE_BODY, ACID_SPITTER_BODY } from '../config.js';
 
 /**
  * Enemy — a pooled Arcade physics sprite with a five-state FSM.
@@ -59,20 +59,42 @@ export class Enemy extends Physics.Arcade.Sprite {
     this.def = def;
 
     if (this.aiProfile === 'ranged') {
-      // Ranged placeholder (Spitter): a generated blob, no spritesheet/anims. Explicit body from config.
-      const body = def.body;
+      // Ranged Spitter. Real art enters through the swap-point: if the real sheet TEXTURE loaded,
+      // use the 128px sheet + ACID_SPITTER_BODY + animations; otherwise fall back to the generated
+      // green blob (anim-less) with its own small body. Golden rule 4 — missing art never breaks the
+      // game. Gate on the texture, NOT the anim: animations.js registers `Spitter-*` unconditionally,
+      // so a failed sheet load still leaves the anim "existing" (frame-less) — only the texture is
+      // absent when the art is missing.
+      const hasArt = this.scene.textures.exists(`${type}-idle`);
+      // Drives the animation controller: the blob fallback is anim-less, so it must NOT play the
+      // registered Spitter-* anims (which would swap its texture back to the real sheet). See playIfExists.
+      this.animated = hasArt;
+      const body = hasArt ? ACID_SPITTER_BODY : def.body;
       this.facesLeft = body.facesLeft;
-      this.setTexture(CONFIG.placeholder.SPITTER.key);
+      // Spit muzzle: the real sheet's explicit mouth offset; null on the blob path so spawnAcid keeps
+      // its body-relative estimate (the −70 offset is tuned to the 128px art, not the 52px blob).
+      this.muzzleOffset = hasArt ? def.muzzleOffset : null;
+      const artScale = hasArt ? (def.artScale ?? 1) : 1; // shrink the oversized AI art toward ~2-tile scale
+      this.setTexture(hasArt ? CONFIG.TEXTURE_MAP.spitter : CONFIG.placeholder.SPITTER.key);
       this.setOrigin(body.originX, body.originY); // feet
-      this.setScale(1);
+      this.setScale(artScale);
       this.setPosition(x, y);
       this.setActive(true);
       this.setVisible(true);
       this.clearTint();
       this.body.enable = true;
-      this.body.setSize(body.width, body.height);
+      // Body is set in UNSCALED frame px. Arcade scales the body size AND offset by the sprite scale
+      // (around the feet origin) on the next physics step, so it keeps hugging the art and stays
+      // grounded — verified in Phaser 4: setSize(32,70) + scale 0.78 → a 25×55 body on the feet line.
+      // At artScale 1 (melee zombies / blob fallback) this is the original unscaled body.
+      this.body.setSize(body.width, body.height);   // after setTexture so the frame is set
       this.body.setOffset(body.offsetX, body.offsetY);
-      this.deadDuration = 0; // no death anim for the placeholder — DEAD just lingers corpseLinger
+      if (hasArt) {
+        this.play(`${type}-idle`);
+        this.deadDuration = this.scene.anims.get(`${type}-dead`).duration / 1000;
+      } else {
+        this.deadDuration = 0; // placeholder blob: no death anim — DEAD just lingers corpseLinger
+      }
       this.health = def.maxHealth;
       this.resetFsm(x);
       return;
@@ -80,6 +102,7 @@ export class Enemy extends Physics.Arcade.Sprite {
 
     // --- Melee (existing Zombie behavior, unchanged) ---
     const body = ZOMBIE_BODY[type];
+    this.animated = true; // real zombie sheets always load — the controller animates normally
     this.facesLeft = body.facesLeft;
 
     // Real art fitted to an explicit torso body (art never drives the hitbox).
@@ -127,9 +150,14 @@ export class Enemy extends Physics.Arcade.Sprite {
     else this.body.setVelocityX(0);
   }
 
-  /** Play an animation only if it's registered (the anim-less placeholder spitter no-ops safely). */
+  /**
+   * Play an animation only if this enemy is animated AND the anim is registered. The `animated`
+   * gate matters for the placeholder-blob Spitter: the Spitter-* anims ARE registered (for the real
+   * art), so without this gate the controller would play them and swap the blob's texture to the real
+   * sheet. Guarding on `animated` keeps the anim-less fallback truly static.
+   */
   playIfExists(key, ignoreIfPlaying) {
-    if (this.scene.anims.exists(key)) this.play(key, ignoreIfPlaying);
+    if (this.animated && this.scene.anims.exists(key)) this.play(key, ignoreIfPlaying);
   }
 
   /**

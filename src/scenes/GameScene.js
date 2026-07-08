@@ -416,8 +416,13 @@ export class GameScene extends Scene {
    */
   spawnAcid(enemy, player) {
     const g = CONFIG.acid.gravityY;
-    const mx = enemy.x;
-    const my = enemy.y - enemy.body.height * 0.6;          // muzzle at the spitter's upper body
+    // Muzzle origin: prefer the enemy's explicit muzzleOffset (px from feet-origin, decoupled from
+    // the hitbox so body retuning never moves the spit). Fall back to the old body-relative estimate
+    // for the placeholder blob / any ranged enemy without one. The ballistic solve below is unchanged.
+    const off = enemy.muzzleOffset;
+    // off is measured in unscaled texture px from the feet-origin → scale it by the sprite's art scale.
+    const mx = off ? enemy.x + off.x * enemy.scaleX : enemy.x;
+    const my = off ? enemy.y + off.y * enemy.scaleY : enemy.y - enemy.body.height * 0.6;
     const tx = player.x;
     const ty = player.y - PLAYER_BODY.height * 0.5;         // aim at the player's torso
     const dx = tx - mx;

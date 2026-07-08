@@ -48,6 +48,17 @@ export class BootScene extends Scene {
       }
     }
 
+    // Ranged Spitter (P3.1) — one 128×128 strip per state in public/assets/Spitter/. Same loader
+    // shape as the player; key matches the anim it feeds (e.g. 'Spitter-attack'). If a strip is
+    // missing, the texture just won't exist and Enemy.spawn falls back to the green-blob placeholder.
+    const S = ASSETS.spitter;
+    for (const [state, [file]] of Object.entries(S.anims)) {
+      this.load.spritesheet(`Spitter-${state}`, `${S.dir}/${file}`, {
+        frameWidth: S.frame,
+        frameHeight: S.frame,
+      });
+    }
+
     // Pickup collectibles (L5) — chest.png is a 6-frame 64×64 shimmer sheet
     const chest = ASSETS.pickups.chest;
     this.load.spritesheet('pickup-chest', chest.path, { frameWidth: chest.frame, frameHeight: chest.frame });
@@ -64,7 +75,7 @@ export class BootScene extends Scene {
     this.generateLightTextures();
     registerAnimations(this);
 
-    // DoD verification: confirm every animation registered (9 player + 20 zombie + 1 pickup = 30)
+    // DoD verification: confirm every animation registered (9 player + 20 zombie + 5 spitter + 1 pickup = 35)
     console.log(
       `[BootScene] Animations registered: ${this.anims.anims.size} →`,
       [...this.anims.anims.keys()],

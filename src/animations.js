@@ -32,6 +32,18 @@ export function registerAnimations(scene) {
     }
   }
 
+  // Ranged Spitter (P3.1) — one anim per state from ASSETS.spitter, keyed 'Spitter-<state>'.
+  // Only idle/walk loop; attack/hurt/dead play once (same rule as the zombies).
+  for (const [state, [, frames, fps, loop]] of Object.entries(ASSETS.spitter.anims)) {
+    const key = `Spitter-${state}`;
+    scene.anims.create({
+      key,
+      frames: scene.anims.generateFrameNumbers(key, { start: 0, end: frames - 1 }),
+      frameRate: fps,
+      repeat: loop ? -1 : 0,
+    });
+  }
+
   // Pickups (L5) — a looping shimmer per collectible sheet (e.g. 'pickup-chest').
   for (const [name, { frames, fps }] of Object.entries(ASSETS.pickups)) {
     const key = `pickup-${name}`;
