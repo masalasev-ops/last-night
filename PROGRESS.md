@@ -1,7 +1,9 @@
-# Progress — Last Night (Phase 2 vertical slice)
+# Progress — Last Night
 
-Milestone log for the one-level forest slice. Plan/DoD detail lives in
-`docs/BUILD_PHASE2_SLICE.md`; this file tracks status.
+Milestone log. Plan/DoD detail lives in the phase docs (`docs/BUILD_PHASE2_SLICE.md` for the
+slice; `docs/PHASE3_PLAN.md` + per-milestone specs for Phase 3); this file tracks status.
+
+## Phase 2 — one-level forest vertical slice ✅
 
 | Milestone | What it delivered | Status |
 |-----------|-------------------|--------|
@@ -29,3 +31,17 @@ Milestone log for the one-level forest slice. Plan/DoD detail lives in
   a feel flag to playtest before changing.
 - Per the slice scope: no save/load, checkpoints, menus, weapon progression, audio, or other
   levels/biomes — those are later phases.
+
+## Phase 3 — game systems (in progress)
+Source of truth: `docs/PHASE3_PLAN.md` + per-milestone specs (e.g. `docs/P3.1_RANGED_ENEMY.md`).
+
+| Milestone | What it delivered | Status |
+|-----------|-------------------|--------|
+| **P3.1 — Ranged enemy (Acid Spitter)** | Ranged `aiProfile` on the shared FSM (kite band + arcing acid that reaches a perched player, via `AcidProjectile`); real PixelLab sprite (idle/walk/attack/hurt/dead) dropped in through the swap-point with an explicit `ACID_SPITTER_BODY`, decoupled spit muzzle, and `artScale` sizing to the zombie roster; green-blob placeholder kept as fallback. | ✅ Done |
+
+### P3.1 notes / follow-ups
+- **AI-art pipeline** established (see CLAUDE.md → Assets): raw PixelLab frames git-ignored under
+  `public/assets/ai-generated/`; assembled strips (baseline-aligned) committed under `public/assets/Spitter/`.
+- **Deferred polish** (not blockers): spit reads green-charge → orange-burst; the spitter holds a
+  static frame while kiting between spits (shared FSM behavior); the enemy hurt "flash" uses
+  `setTint(0xffffff)`, a no-op game-wide (fix with `setTintFill` later).
