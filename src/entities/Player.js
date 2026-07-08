@@ -134,7 +134,6 @@ export class Player extends Physics.Arcade.Sprite {
     const { moveSpeed, sprintMultiplier, jumpVelocity, coyoteTime, jumpBuffer,
             invulnOnHit, knockback, knockbackDuration } = CONFIG;
     const { left, right, arrowLeft, arrowRight, jump, jumpUp, sprint, reload } = this.keys;
-    const weapon = this.weapon; // live active-weapon stats (getter → CONFIG.WEAPONS[currentWeaponId])
     const onGround = this.body.blocked.down;
     const pointer = this.scene.input.activePointer;
 
@@ -215,6 +214,11 @@ export class Player extends Physics.Arcade.Sprite {
     for (let i = 0; i < switchKeys.length && i < weaponIds.length; i++) {
       if (Input.Keyboard.JustDown(switchKeys[i])) this.switchWeapon(weaponIds[i]);
     }
+
+    // Read the active weapon AFTER the switch loop so a switch-this-frame is reflected in the shooting +
+    // reload logic below (fireMode/fireRate/magSize/reloadTime), keeping it consistent with the mag and
+    // fireWeapon(), which read the live weapon too. Getter → CONFIG.WEAPONS[currentWeaponId].
+    const weapon = this.weapon;
 
     // --- Shooting — fire mode is per-weapon: 'auto' fires while held, 'single' on the pointer press edge
     // (Phaser Pointer has no JustDown, so detect the edge against last frame's state). Both share the
