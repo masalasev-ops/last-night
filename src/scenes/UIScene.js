@@ -1,5 +1,6 @@
 import { Scene } from 'phaser';
 import { CONFIG } from '../config.js';
+import { runState } from '../runState.js';
 
 /**
  * UIScene — HUD overlay rendered above GameScene (and above its darkness overlay, so the HUD
@@ -39,6 +40,16 @@ export class UIScene extends Scene {
         fontFamily: hud.font.family,
         fontSize: hud.font.size - 2,
         color: '#9aa0ac',
+      })
+      .setStroke(hud.stroke.color, hud.stroke.thickness);
+
+    // --- Salvage counter (P3.3): the run currency, read live from RunState each frame. Gold to match
+    // the floating "+N" kill feedback; sits just below the weapon label. ---
+    this.salvageText = this.add
+      .text(b.x, b.y + b.h + 6 + (hud.font.size + 4) * 2, '', {
+        fontFamily: hud.font.family,
+        fontSize: hud.font.size - 2,
+        color: '#ffd27f',
       })
       .setStroke(hud.stroke.color, hud.stroke.thickness);
 
@@ -112,12 +123,11 @@ export class UIScene extends Scene {
     this.healthFill.setFillStyle(pct <= b.lowPct ? b.low : b.fill);
     this.hpLabel.setText(`HP ${Math.max(0, Math.round(player.health))}`);
 
-    // Win / death overlays
-    if (player.won) {
-      this.statusText.setText('YOU MADE IT\nPress R to replay').setVisible(true);
-      this.ammoText.setText('');
-      return;
-    }
+    // Salvage counter (P3.3) — live from RunState
+    this.salvageText.setText(`SALVAGE ${runState.salvage}`);
+
+    // Death overlay. (Win no longer shows here — level-complete transitions straight to the ShopScene,
+    // which stops this UI, so a "YOU MADE IT" branch would be unreachable.)
     if (player.dead) {
       this.statusText.setText('YOU DIED\nPress R to restart').setVisible(true);
       this.ammoText.setText('');

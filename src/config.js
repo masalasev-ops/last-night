@@ -40,13 +40,37 @@ export const CONFIG = {
   // The refactor shipped with rifle == the old weapon exactly (regression-safe); rifle was then TUNED in
   // playtest (fireRate 6→4, bulletSpeed 1240→1500) + SMG spreadDeg 3→7 so the two auto weapons read as
   // clearly distinct (deliberate rifle crack + fast flat tracer vs a sprayier SMG), not near-identical.
+  // P3.3: WEAPONS is the IMMUTABLE TEMPLATE — never mutated at runtime. runState.recompute() deep-clones
+  // it into runState.weapons (the live, upgrade-modified copy that Player.get weapon() reads). `unlockCost`
+  // is the salvage price to unlock the weapon in the shop (0 = starting weapon); it rides along in the
+  // clone harmlessly (a per-weapon number, not a combat stat).
   WEAPONS: {
-    rifle:   { name: 'RIFLE',   fireMode: 'auto',   damage: 12, fireRate: 4,   magSize: 12, reloadTime: 1.1, bulletSpeed: 1500, range: 800, pellets: 1, spreadDeg: 0,  ammoType: 'rifle', projectileTint: null,     muzzleScale: 1.0, hudIcon: null, sfxFire: null, sfxReload: null },
-    shotgun: { name: 'SHOTGUN', fireMode: 'single', damage: 7,  fireRate: 1.5, magSize: 6,  reloadTime: 1.6, bulletSpeed: 1000, range: 420, pellets: 7, spreadDeg: 18, ammoType: 'shell', projectileTint: 0xffd27f, muzzleScale: 1.4, hudIcon: null, sfxFire: null, sfxReload: null },
-    smg:     { name: 'SMG',     fireMode: 'auto',   damage: 7,  fireRate: 14,  magSize: 30, reloadTime: 1.3, bulletSpeed: 1180, range: 640, pellets: 1, spreadDeg: 7,  ammoType: 'smg',   projectileTint: 0x9ad0ff, muzzleScale: 0.8, hudIcon: null, sfxFire: null, sfxReload: null },
+    rifle:   { name: 'RIFLE',   fireMode: 'auto',   damage: 12, fireRate: 4,   magSize: 12, reloadTime: 1.1, bulletSpeed: 1500, range: 800, pellets: 1, spreadDeg: 0,  ammoType: 'rifle', projectileTint: null,     muzzleScale: 1.0, unlockCost: 0,  hudIcon: null, sfxFire: null, sfxReload: null },
+    shotgun: { name: 'SHOTGUN', fireMode: 'single', damage: 7,  fireRate: 1.5, magSize: 6,  reloadTime: 1.6, bulletSpeed: 1000, range: 420, pellets: 7, spreadDeg: 18, ammoType: 'shell', projectileTint: 0xffd27f, muzzleScale: 1.4, unlockCost: 12, hudIcon: null, sfxFire: null, sfxReload: null },
+    smg:     { name: 'SMG',     fireMode: 'auto',   damage: 7,  fireRate: 14,  magSize: 30, reloadTime: 1.3, bulletSpeed: 1180, range: 640, pellets: 1, spreadDeg: 7,  ammoType: 'smg',   projectileTint: 0x9ad0ff, muzzleScale: 0.8, unlockCost: 18, hudIcon: null, sfxFire: null, sfxReload: null },
   },
   defaultWeaponId: 'rifle',       // the weapon the player starts holding (keys 1/2/3 follow WEAPONS order)
+  startingWeapon: 'rifle',        // P3.3: the only weapon unlocked at run start (shotgun/smg are shop buys)
+  salvageStart: 0,                // P3.3: salvage balance at run start
   bulletPoolSize: 48,             // shared projectile pool — sized for the worst case (SMG spray + shotgun volley)
+
+  // P3.3: data-driven weapon upgrades. Each is a one-shot stat modifier applied by runState.recompute()
+  // (adds before mults, rebuilt from the WEAPONS template — order of purchase never changes the result).
+  // { name (shop label), target (weapon id; 'player' reserved/unused), stat, mode:'add'|'mult', amount,
+  //   cost (salvage), prereq? (upgrade id that must be owned first — tiers) }. Costs/amounts are tuning.
+  UPGRADES: {
+    rifle_dmg_1:      { name: 'Rifle Damage I',    target: 'rifle',   stat: 'damage',     mode: 'add',  amount: 4,    cost: 10 },
+    rifle_dmg_2:      { name: 'Rifle Damage II',   target: 'rifle',   stat: 'damage',     mode: 'add',  amount: 5,    cost: 18, prereq: 'rifle_dmg_1' },
+    shotgun_reload_1: { name: 'Shotgun Fast Load', target: 'shotgun', stat: 'reloadTime', mode: 'mult', amount: 0.8,  cost: 12 },
+    smg_mag_1:        { name: 'SMG Extended Mag',   target: 'smg',     stat: 'magSize',    mode: 'add',  amount: 10,   cost: 12 },
+    rifle_firerate_1: { name: 'Rifle Rapid Fire',  target: 'rifle',   stat: 'fireRate',   mode: 'mult', amount: 1.25, cost: 15 },
+  },
+
+  // P3.3: the end-of-level shop's stock — weapon unlocks (cost = WEAPONS[id].unlockCost) + upgrade ids.
+  SHOP: {
+    weaponsForSale: ['shotgun', 'smg'],
+    upgradesForSale: ['rifle_dmg_1', 'rifle_dmg_2', 'shotgun_reload_1', 'smg_mag_1', 'rifle_firerate_1'],
+  },
 
   // Gun-tip offset from the player's sprite origin (feet), in texture px. Global — all weapons use the
   // same rifle gun art (Decision 1). Bullets + muzzle flash spawn here; x is mirrored by aim direction.
@@ -67,6 +91,8 @@ export const CONFIG = {
     // Bounded (well under a screen-width) so it stays visible instead of marching off-screen.
     hurtDuration: 0.15, // s — white-tint flash when hit
     enemyPoolSize: 10, // max pooled enemies alive at once
+    salvageDrop: { min: 1, max: 2 }, // P3.3 shared melee salvage roll — GameScene.awardSalvage falls
+    // back to this for any enemy type whose ENEMIES row omits salvageDrop (the four Zombie_N rows do).
     maxVerticalReach: 72, // px — chase/detection vertical tolerance (how far above/below it will pursue)
     climbHeight: 32, // px — max step-up a zombie can manage (it can't jump). A *grounded* player higher
     // than this is unreachable → the zombie gives up and retreats. Must be below the smallest platform
@@ -91,7 +117,7 @@ export const CONFIG = {
       preferredRange: { min: 180, max: 320 },  // px — the kite band it holds
       firingRange: 420,                        // px — max distance it will spit from
       attackCooldown: 1.6,                     // s between spits
-      scrapDrop: { min: 2, max: 4 },           // unused until P3.3 (scrap economy)
+      salvageDrop: { min: 2, max: 4 },         // P3.3 salvage economy — spitter drops more than melee
       // AI art is drawn ~3 tiles tall (95px) vs the ~2-tile (67px) zombies; scale it down to sit in
       // the roster. 0.78 → ~74px (~1.1× a zombie): a touch bulkier, not towering. The body + spit
       // muzzle scale with this automatically (Enemy.spawn / GameScene.spawnAcid) — tune this one value.

@@ -390,6 +390,7 @@ export class Enemy extends Physics.Arcade.Sprite {
 
     if (this.health <= 0) {
       this.state = STATE.DEAD;
+      this.scene.awardSalvage(this.type, this.x, this.y); // P3.3: single kill hook → salvage + floating +N
       this.playIfExists(`${this.type}-dead`); // one-shot; holds last frame (placeholder: no-op)
       this.body.setVelocity(0, 0);
       this.body.enable = false; // corpse: no collisions/overlaps, stays put

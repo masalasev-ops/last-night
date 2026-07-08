@@ -12,7 +12,7 @@
 |---|---|---|
 | 1 | Weapon look | **HUD/projectile, not character art.** Soldier always visually holds the rifle; weapon identity reads from HUD icon + projectile + sound. Per-weapon character art is a deferrable later art pass (hold-groups, not per-weapon). |
 | 2 | Weapon set | **3 weapons** — Rifle (auto), Shotgun (spread/pellets), SMG (fast/low-damage). Weapon "art" = 3 small HUD icons; projectiles/muzzle are config, not new art. |
-| 3 | Upgrade economy | **Scrap dropped by enemies**, spent at an **end-of-level shop** (between-levels scene) on weapons and upgrades. No mid-level spending. |
+| 3 | Upgrade economy | **Salvage dropped by enemies**, spent at an **end-of-level shop** (between-levels scene) on weapons and upgrades. No mid-level spending. |
 | 4 | Second biome | **Yes** — Level 2 in a darker biome (swamp / cave / ruins; exact CraftPix pack confirmed at P3.6). |
 | 5 | Bosses & extra enemies | **AI-generated**, matched to the CraftPix style (see the AI Prompt Kit). Built behavior-first with placeholders, art dropped in via the swap-point. |
 | 6 | Save storage | **`localStorage`** for Continue/autosave. **New Game wipes the save clean.** Full save UI deferred. |
@@ -60,16 +60,16 @@ Split point: **3a = P3.1–P3.5 (combat + systems)**, **3b = P3.6–P3.10 (conte
 Refactor the single weapon into a `WEAPONS` table; ship Rifle / Shotgun / SMG with switching (number keys / scroll) and per-weapon ammo. Weapon identity = HUD icon + projectile behavior (pellets/spread/speed/tint) + sound. No character-art change.
 *DoD:* 3 weapons switchable and distinctly different; all from data; a 4th would be a data row; HUD shows current weapon + icon; per-weapon ammo tracked.
 
-**P3.3 — Scrap, end-of-level shop & upgrades**
-Enemies drop **scrap**. On level-complete, an **end-of-level shop scene** lets the player spend scrap on weapon unlocks and **upgrades** (data-driven stat modifiers: damage, reload, mag, fire rate). Prove one full upgrade path end-to-end. No mid-level spending.
-*DoD:* enemies drop scrap that's counted; the shop opens on level-complete and spends scrap to unlock/upgrade; effects apply and persist into the next level; leaving the shop continues the game.
+**P3.3 — Salvage, end-of-level shop & upgrades**
+Enemies drop **salvage**. On level-complete, an **end-of-level shop scene** lets the player spend salvage on weapon unlocks and **upgrades** (data-driven stat modifiers: damage, reload, mag, fire rate). Prove one full upgrade path end-to-end. No mid-level spending.
+*DoD:* enemies drop salvage that's counted; the shop opens on level-complete and spends salvage to unlock/upgrade; effects apply and persist into the next level; leaving the shop continues the game.
 
 **P3.4 — Enemy roster expansion**
 2–3 more types via `aiProfile` + data (fast **runner**, **tank**, optional **flyer**), reusing the FSM. Placeholder-first; AI art later.
 *DoD:* new types exist as data + existing profiles, each distinct; a mixed-group fight reads clearly; 60 FPS.
 
 **P3.5 — Checkpoints & save/load**
-Checkpoints from level data (respawn, restore state). A save module: **Continue** + autosave on checkpoint via `localStorage` (versioned), persisting level/checkpoint, player stats, ammo, weapons, upgrades, scrap, and rescue/story flags. **New Game wipes the save.**
+Checkpoints from level data (respawn, restore state). A save module: **Continue** + autosave on checkpoint via `localStorage` (versioned), persisting level/checkpoint, player stats, ammo, weapons, upgrades, salvage, and rescue/story flags. **New Game wipes the save.**
 *DoD:* dying respawns at the last checkpoint with state restored; Continue restores progress across a relaunch; New Game clears everything and starts fresh.
 
 ### Phase 3b — Content, shell & ship
@@ -108,7 +108,7 @@ WEAPONS[id]  = { name, fireMode:'single'|'auto'|'burst', damage, fireRate, magSi
                  projectileTint, muzzleScale, hudIcon, sfxFire, sfxReload }
 ENEMIES[type]= { aiProfile:'melee'|'ranged'|'runner'|'tank'|'flyer', maxHealth, moveSpeed,
                  chaseSpeed, detectionRadius, attackRange, touchDamage, attackCooldown,
-                 scrapDrop:{min,max}, sheet, body,
+                 salvageDrop:{min,max}, sheet, body,
                  // ranged: projectileId, preferredRange, projectileSpeed, projectileArc }
 UPGRADES[id] = { target:weaponId|'player', stat, mode:'add'|'mult', amount, cost, prereq? }
 SHOP         = { weaponsForSale:[ids], upgradesForSale:[ids] }        // shown between levels
@@ -119,7 +119,7 @@ LEVEL[id]    = { biome, tilesetKey, bgLayers, terrain, spawn, checkpoints:[...],
                  enemySpawns:[{type,x,y,trigger:'on_load'|'on_enter_zone',zone?}],
                  itemSpawns, pickups, boss?, nextLevelId }
 SAVE         = { version, currentLevelId, checkpointIndex, player:{health,armor,maxHealth},
-                 ammoByType, unlockedWeapons, upgrades, scrap, storyFlags, beatsSeen }
+                 ammoByType, unlockedWeapons, upgrades, salvage, storyFlags, beatsSeen }
                  // storyFlags tracks rescues/clues/allies met; New Game deletes this key entirely
 ```
 

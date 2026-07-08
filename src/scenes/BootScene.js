@@ -1,5 +1,6 @@
 import { Scene } from 'phaser';
 import { CONFIG, ASSETS } from '../config.js';
+import { runState } from '../runState.js';
 import { registerAnimations } from '../animations.js';
 
 /** Convert a CSS hex string like '#7fb0c8' to a Phaser integer 0x7fb0c8. */
@@ -71,6 +72,10 @@ export class BootScene extends Scene {
   }
 
   create() {
+    // P3.3: seed run-scoped state (salvage/unlocks/upgrades + the runtime weapons table) BEFORE the
+    // first Player is built in GameScene.create() — Player.get weapon() / ammo read runState.weapons.
+    runState.init();
+
     this.generatePlaceholders();
     this.generateLightTextures();
     registerAnimations(this);
@@ -81,8 +86,9 @@ export class BootScene extends Scene {
       [...this.anims.anims.keys()],
     );
 
+    // Start the level. GameScene.create() now OWNS launching the UI overlay (P3.3), so every fresh level
+    // — first boot, a shop → next-level Continue, a death restart — brings up a fresh HUD.
     this.scene.start('Game');
-    this.scene.launch('UI'); // overlay — runs above GameScene
   }
 
   /**

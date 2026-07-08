@@ -1,5 +1,6 @@
 import { Scene, Input, BlendModes } from 'phaser';
 import { CONFIG, ASSETS, PLAYER_BODY } from '../config.js';
+import { runState } from '../runState.js';
 import { Player } from '../entities/Player.js';
 import { Bullet } from '../entities/Bullet.js';
 import { Enemy } from '../entities/Enemy.js';
@@ -192,16 +193,23 @@ export class GameScene extends Scene {
     // --- Intro beat (L5): fade the view in; UIScene shows the title card (non-blocking) ---
     this.cameras.main.fadeIn(CONFIG.intro.fadeMs);
 
+    // HUD overlay (P3.3): GameScene now OWNS launching UIScene (moved out of BootScene) so every fresh
+    // level — first boot, a shop → next-level Continue, or a death restart — brings up a fresh HUD.
+    // UI is stopped explicitly before any outbound transition (win → shop, death → restart).
+    this.scene.launch('UI');
+
     console.log('[GameScene] ready');
   }
 
   update(time, delta) {
     this.player.update(time, delta);
 
-    // Restart: player died/won and pressed R
+    // Restart: player died and pressed R. Stop UI (GameScene owns it now) then restart the level; the
+    // fresh GameScene.create() relaunches a fresh UI. RunState is a module singleton — untouched by the
+    // restart — so salvage/unlocks/upgrades carry over (real death economics come in P3.5).
     if (this.player.wantsRestart) {
+      this.scene.stop('UI');
       this.scene.restart();
-      this.scene.get('UI').scene.restart();
       return; // fix: no further access to torn-down scene objects
     }
 
@@ -209,6 +217,14 @@ export class GameScene extends Scene {
     if (!this.player.dead && !this.player.won && this.player.x >= CONFIG.LEVEL.endMarkerX) {
       this.player.won = true;
       this.player.body.setVelocity(0, 0);
+    }
+
+    // Level-complete → end-of-level shop (P3.3). Keys off player.won, so crossing the marker OR the
+    // harness setting won both open the shop. Stop UI, then start Shop (which shuts down this scene).
+    if (this.player.won) {
+      this.scene.stop('UI');
+      this.scene.start('Shop');
+      return; // GameScene is shutting down — don't touch its objects below
     }
 
     // Darkness overlay: erase the player glow + gun flashlight cone this frame (only when the
@@ -221,6 +237,7 @@ export class GameScene extends Scene {
       this.player.godMode = this.debugOn;
 
       if (this.debugOn) {
+        runState.unlockAll(); // god-mode also unlocks all weapons for testing (P3.3)
         // Physics debug draw — create the debug graphic on first enable
         if (!this.physics.world.debugGraphic) {
           this.physics.world.createDebugGraphic();
@@ -409,6 +426,35 @@ export class GameScene extends Scene {
 
     bullet.deactivate();
     enemy.takeDamage(bullet.damage); // per-shot damage stamped at fire time (P3.2), not a global lookup
+  }
+
+  /**
+   * Award salvage on a kill (P3.3) — the single currency hook, called from Enemy.takeDamage()'s lethal
+   * branch. Rolls min..max from the type's salvageDrop (falling back to the shared melee default), adds
+   * it to the run-scoped RunState, and spawns a short-lived floating "+N" text as feedback (no pickup
+   * physics — salvage is auto-collected). The HUD salvage counter reads runState.salvage each frame.
+   */
+  awardSalvage(type, x, y) {
+    const drop = CONFIG.ENEMIES[type]?.salvageDrop ?? CONFIG.enemy.salvageDrop;
+    const n = Math.floor(Math.random() * (drop.max - drop.min + 1)) + drop.min;
+    runState.addSalvage(n);
+
+    // Floating "+N" — rises and fades, then destroys itself (no leaked objects; kills are sparse, not hot-path).
+    // Depth 1001 puts it ABOVE the night-atmosphere darkness overlay (depth 1000) so it reads at full
+    // brightness like a HUD popup — otherwise the overlay dims it into near-invisibility (bug fix).
+    const label = this.add
+      .text(x, y - 46, `+${n}`, { fontFamily: CONFIG.hud.font.family, fontSize: 20, fontStyle: 'bold', color: '#ffe08a' })
+      .setOrigin(0.5)
+      .setDepth(1001)
+      .setStroke(CONFIG.hud.stroke.color, CONFIG.hud.stroke.thickness + 1);
+    this.tweens.add({
+      targets: label,
+      y: y - 92,
+      alpha: 0,
+      duration: 900,
+      ease: 'Cubic.easeOut',
+      onComplete: () => label.destroy(),
+    });
   }
 
   /**

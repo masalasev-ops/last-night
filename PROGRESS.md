@@ -40,6 +40,7 @@ Source of truth: `docs/PHASE3_PLAN.md` + per-milestone specs (e.g. `docs/P3.1_RA
 |-----------|-------------------|--------|
 | **P3.1 — Ranged enemy (Acid Spitter)** | Ranged `aiProfile` on the shared FSM (kite band + arcing acid that reaches a perched player, via `AcidProjectile`); real PixelLab sprite (idle/walk/attack/hurt/dead) dropped in through the swap-point with an explicit `ACID_SPITTER_BODY`, decoupled spit muzzle, and `artScale` sizing to the zombie roster; green-blob placeholder kept as fallback. | ✅ Done |
 | **P3.2 — Data-driven weapon system + switching** | Flat `weapon` → a **`WEAPONS` data table** (Rifle/Shotgun/SMG) read live via `player.weapon`; **per-weapon mags** switchable with **1/2/3**; per-weapon **fire mode** (`auto` hold-to-fire vs `single` click-per-shell), **pellets/spread**, **projectileTint**, and **muzzleScale**. Headline refactor: **bullets carry their own damage/range/tint** (stamped at `bullet.fire()`), so a mid-air weapon switch never mutates a round in flight. Weapon identity = HUD label + projectile, **no character-art change**. A 4th weapon is now a pure data row. | ✅ Done |
+| **P3.3 — Salvage, end-of-level shop & upgrades** | The combat loop **kill → salvage → shop → stronger**. New **`RunState`** module (in-memory singleton, survives scene transitions) owns run-scoped `salvage`/`unlockedWeapons`/`ownedUpgrades` + a **runtime weapons table** (a `structuredClone` of the `CONFIG.WEAPONS` template that upgrades modify). `Player.get weapon()` reads `runState.weapons[id]`, so via the P3.2 seam an upgrade reaches the bullet with **zero engine change**. Enemies drop salvage on the kill (auto-collected, floating `+N`, HUD counter); a new **`ShopScene`** spends it on **weapon unlocks** (start rifle-only; shotgun/SMG earned) and **data-driven `UPGRADES`** (add/mult on damage/reload/mag/fireRate, tiered via `prereq`), applied by **`recompute()`** (adds-before-mults, rebuilt from template). Win → shop → next level; `RunState` persists across the transition. | ✅ Done |
 
 ### P3.1 notes / follow-ups
 - **AI-art pipeline** established (see CLAUDE.md → Assets): raw PixelLab frames git-ignored under
@@ -65,3 +66,24 @@ Source of truth: `docs/PHASE3_PLAN.md` + per-milestone specs (e.g. `docs/P3.1_RA
   bullet speed + tiny SMG spread). Data-only fix in `CONFIG.WEAPONS` — rifle `fireRate 6→4` +
   `bulletSpeed 1240→1500` (deliberate crack, fast flat tracer); SMG `spreadDeg 3→7` (visible cone).
   Measured cadence gap widened 2.2×→3.3×. So rifle no longer matches the pre-P3.2 numbers by design.
+
+### P3.3 notes / follow-ups
+- **The seam paid off**: redirecting `Player.get weapon()` from `CONFIG.WEAPONS` to `runState.weapons`
+  was the whole job — a bought upgrade is stamped onto the very next bullet with no combat-code change
+  (verified directly, test D). `recompute()` (clone template → all adds → all mults) is the **only**
+  writer of the runtime table, so purchase order never matters and P3.5 can restore a save by setting
+  `ownedUpgrades` + calling it.
+- **Scene ownership moved**: `GameScene.create()` now launches `UIScene` (was `BootScene`), and UI is
+  stopped before every outbound transition (win → shop, death → restart) — so the HUD comes back
+  correctly after the shop.
+- **Parked for later** (reserved, no consumer yet): `RunState.reset()` exists but nothing calls it to
+  wipe a run — **`localStorage` save/continue + New-Game-wipe is P3.5** (which reuses `reset()`/`recompute()`).
+  `target:'player'` upgrades are a reserved value (player stats still come from `CONFIG`; a small
+  `runState.player` seam later). Salvage is **auto-collected on kill** (no collectible pickup entity yet).
+  The shop is a **functional text UI** (real layout/weapon icons are an art pass). **Continue restarts
+  L1 as a stub** until P3.6 adds Level 2 — so the intro card replays each Continue (expected, not a bug);
+  persistence is proven by `RunState` surviving the Game→Shop→Game round-trip, not a distinct 2nd level.
+- Verified with the puppeteer-core harness (A–I, 9/9): salvage counted within each type's `min..max` +
+  `+N`/HUD; shop opens on win (Game/UI stopped); **upgrade reaches the fired bullet** (D); tier gate +
+  additive stack (E); unlock gates switching (F); **RunState persists across Game→Shop→Game and can't
+  overspend** (G); round-trip clean, no `+N` leak, ~55–57 FPS (H).

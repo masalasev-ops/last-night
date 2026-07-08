@@ -1,5 +1,6 @@
 import { Physics, Input } from 'phaser';
 import { CONFIG, PLAYER_BODY } from '../config.js';
+import { runState } from '../runState.js';
 
 /**
  * Player — a 12×20 Arcade physics sprite controlled by the keyboard + mouse.
@@ -88,20 +89,22 @@ export class Player extends Physics.Arcade.Sprite {
     this.bulletGroup = bulletGroup;
     this.shootTimer = 0; // s — cooldown until next shot allowed. SHARED across weapons (carries across a
     // switch) so you can't spam-switch to dodge fire-rate.
-    this.currentWeaponId = CONFIG.defaultWeaponId; // id into CONFIG.WEAPONS; stats read live via get weapon()
+    this.currentWeaponId = runState.unlockedWeapons[0]; // start on the first unlocked weapon (rifle); stats read live
     // Per-weapon CURRENT mag, keyed by weapon id (reserve ammo is out of scope until P3.5). Each mag
-    // starts full and is tracked independently, so switching weapons preserves each one's remaining rounds.
+    // starts full from the RUNTIME magSize (so a magSize upgrade is reflected the next level), and is
+    // tracked independently, so switching weapons preserves each one's remaining rounds.
     this.ammo = {};
-    for (const id of Object.keys(CONFIG.WEAPONS)) this.ammo[id] = CONFIG.WEAPONS[id].magSize;
+    for (const id of Object.keys(CONFIG.WEAPONS)) this.ammo[id] = runState.weapons[id].magSize;
     this.reloading = false;
     this.reloadTimer = 0; // s — remaining reload time (of the active weapon)
     this.prevPointerDown = false; // last frame's pointer state — for 'single' fire-mode press-edge detection
   }
 
-  /** The active weapon's stats, read LIVE from the data table (never snapshotted — a copy would go
-   * stale the moment P3.3's upgrades mutate a WEAPONS row). */
+  /** The active weapon's stats, read LIVE from the RUNTIME table (runState.weapons — the upgrade-modified
+   * clone of CONFIG.WEAPONS). Never snapshotted: an upgrade's recompute() is seen on the very next read,
+   * and the bullet is stamped from it at fire time, so upgrades reach the projectile with no engine change. */
   get weapon() {
-    return CONFIG.WEAPONS[this.currentWeaponId];
+    return runState.weapons[this.currentWeaponId];
   }
 
   /**
@@ -113,6 +116,7 @@ export class Player extends Physics.Arcade.Sprite {
   switchWeapon(id) {
     if (this.dead || this.won) return;
     if (id === this.currentWeaponId || !CONFIG.WEAPONS[id]) return;
+    if (!runState.isUnlocked(id)) return; // P3.3: locked weapons (shotgun/smg until bought) can't be selected
     this.currentWeaponId = id;
     this.reloading = false;
     this.reloadTimer = 0;
