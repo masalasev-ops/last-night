@@ -32,8 +32,10 @@ export class UIScene extends Scene {
         color: hud.font.color,
       })
       .setStroke(hud.stroke.color, hud.stroke.thickness);
+    // Weapon label — text placeholder for the reserved HUD weapon-icon slot (real ~32px icon is a
+    // later art drop). Initialised to the default weapon; update() sets it live from the active weapon.
     this.weaponText = this.add
-      .text(b.x, b.y + b.h + 6 + hud.font.size + 4, CONFIG.weapon.name, {
+      .text(b.x, b.y + b.h + 6 + hud.font.size + 4, CONFIG.WEAPONS[CONFIG.defaultWeaponId].name, {
         fontFamily: hud.font.family,
         fontSize: hud.font.size - 2,
         color: '#9aa0ac',
@@ -123,10 +125,12 @@ export class UIScene extends Scene {
     }
     this.statusText.setVisible(false);
 
-    // Ammo / reload
-    const { magSize } = CONFIG.weapon;
+    // Weapon + ammo / reload — all read LIVE from the active weapon so they update on a switch.
+    const weapon = player.weapon;
+    this.weaponText.setText(weapon.name);
+    const mag = player.ammo[player.currentWeaponId];
     this.ammoText.setText(
-      player.reloading ? `RELOADING ${player.reloadTimer.toFixed(1)}s` : `AMMO ${player.ammo} / ${magSize}`,
+      player.reloading ? `RELOADING ${player.reloadTimer.toFixed(1)}s` : `AMMO ${mag} / ${weapon.magSize}`,
     );
   }
 }

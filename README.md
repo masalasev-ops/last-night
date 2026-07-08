@@ -25,8 +25,9 @@ Open the URL the dev server prints (fixed port **8081**).
 | `Shift` | Sprint |
 | `W` / `↑` / `Space` | Jump (through one-way platforms; land on top) |
 | Mouse | Aim |
-| Left mouse | Fire the rifle |
-| `R` | Reload — and restart after a win/death |
+| Left mouse | Fire the equipped weapon (hold to fire auto weapons; click per shell for the shotgun) |
+| `1` / `2` / `3` | Switch weapon — Rifle / Shotgun / SMG (each keeps its own ammo) |
+| `R` | Reload the active weapon — and restart after a win/death |
 | `` ` `` (backtick) | Toggle debug overlay (FPS, physics bodies, god mode; right-click spawns a zombie) |
 
 Reach the marker on the far right to win. Zombies chase and attack on the ground; jump onto a

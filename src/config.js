@@ -24,20 +24,32 @@ export const CONFIG = {
   coyoteTime: 0.1, // s — grace period after leaving ground
   jumpBuffer: 0.1, // s — grace period before landing
 
-  // Weapon — the soldier wields a two-handed rifle (Soldier_1 Shot sheet). `name` drives the HUD label.
-  weapon: {
-    name: 'RIFLE',
-    bulletSpeed: 1240, // px/s
-    fireRate: 6, // shots per second
-    magSize: 12,
-    reloadTime: 1.1, // s
-    bulletRange: 800, // px
-    damage: 12,
-    bulletPoolSize: 30, // max pooled bullets alive at once
+  // Weapons (P3.2) — the data table that replaced the single flat `weapon` block. The player holds a
+  // `currentWeaponId` (never a copy of stats); fire-time code reads CONFIG.WEAPONS[id] LIVE so P3.3's
+  // upgrades (which mutate a row) take effect without touching the player. The soldier always visually
+  // holds the rifle (Decision 1) — weapon identity is HUD + projectile (tint/pellets/spread/speed) +
+  // muzzle scale, NOT character art. A new weapon is a new row here, not new engine code (golden rule 6).
+  //   fireMode:  'auto'   = fire while held at the 1/fireRate cadence (rifle, smg)
+  //              'single' = fire on the pointer press-edge, one click per shot (shotgun pump)
+  //              'burst'  = reserved schema value, NO consumer this milestone (do not wire)
+  //   pellets/spreadDeg:  one trigger = one ammo = `pellets` bullets fanned within ±spreadDeg/2 of aim
+  //   projectileTint:     null = the bare light bullet (rifle); non-white multiply-tints it per weapon
+  //   muzzleScale:        per-weapon muzzle-flash size (× particles.muzzle.scaleStart)
+  //   ammoType/hudIcon/sfxFire/sfxReload: RESERVED, inert this milestone (reserve ammo → P3.5, icons →
+  //     later art drop, per-weapon SFX → P3.9).
+  // The refactor shipped with rifle == the old weapon exactly (regression-safe); rifle was then TUNED in
+  // playtest (fireRate 6→4, bulletSpeed 1240→1500) + SMG spreadDeg 3→7 so the two auto weapons read as
+  // clearly distinct (deliberate rifle crack + fast flat tracer vs a sprayier SMG), not near-identical.
+  WEAPONS: {
+    rifle:   { name: 'RIFLE',   fireMode: 'auto',   damage: 12, fireRate: 4,   magSize: 12, reloadTime: 1.1, bulletSpeed: 1500, range: 800, pellets: 1, spreadDeg: 0,  ammoType: 'rifle', projectileTint: null,     muzzleScale: 1.0, hudIcon: null, sfxFire: null, sfxReload: null },
+    shotgun: { name: 'SHOTGUN', fireMode: 'single', damage: 7,  fireRate: 1.5, magSize: 6,  reloadTime: 1.6, bulletSpeed: 1000, range: 420, pellets: 7, spreadDeg: 18, ammoType: 'shell', projectileTint: 0xffd27f, muzzleScale: 1.4, hudIcon: null, sfxFire: null, sfxReload: null },
+    smg:     { name: 'SMG',     fireMode: 'auto',   damage: 7,  fireRate: 14,  magSize: 30, reloadTime: 1.3, bulletSpeed: 1180, range: 640, pellets: 1, spreadDeg: 7,  ammoType: 'smg',   projectileTint: 0x9ad0ff, muzzleScale: 0.8, hudIcon: null, sfxFire: null, sfxReload: null },
   },
+  defaultWeaponId: 'rifle',       // the weapon the player starts holding (keys 1/2/3 follow WEAPONS order)
+  bulletPoolSize: 48,             // shared projectile pool — sized for the worst case (SMG spray + shotgun volley)
 
-  // Gun-tip offset from the player's sprite origin (feet), in texture px.
-  // Bullets + muzzle flash spawn here; x is mirrored by aim direction. Tuned on screen.
+  // Gun-tip offset from the player's sprite origin (feet), in texture px. Global — all weapons use the
+  // same rifle gun art (Decision 1). Bullets + muzzle flash spawn here; x is mirrored by aim direction.
   muzzleOffset: { x: 26, y: -38 },
 
   // Enemy
@@ -142,7 +154,9 @@ export const CONFIG = {
   // Particle burst tunables (explode-only emitters). Retuned ×2 for the 960×540 scale in
   // L3 (speeds/gravity doubled; blood count bumped). Particle textures are 8×8 (BootScene).
   particles: {
-    muzzle: { count: 4, lifespan: 150, speedMin: 40, speedMax: 160 },
+    // scaleStart = base muzzle-flash particle scale (start→0 fade). Player.fireWeapon multiplies it by
+    // the active weapon's muzzleScale before exploding, so each weapon flashes at its own size.
+    muzzle: { count: 4, lifespan: 150, speedMin: 40, speedMax: 160, scaleStart: 0.8 },
     impact: { count: 4, lifespan: 100, speedMin: 100, speedMax: 300 },
     blood: { count: 8, lifespan: 350, speedMin: 60, speedMax: 200, gravityY: 600 },
   },

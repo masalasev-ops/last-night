@@ -9,8 +9,10 @@ import { CONFIG, PLAYER_BODY } from '../config.js';
  * Jump:      Space / Up Arrow, with coyote-time (grace after leaving ground) and
  *            jump-buffer (press slightly before landing still counts).
  * Aim:       Mouse pointer — facing direction follows the pointer, not movement.
- * Shoot:     Hold left-click to fire semi-auto at fireRate shots/sec.
- * Reload:    R key — 1.1s reload, ammo refills to magSize.
+ * Shoot:     Left-click. Fire mode is per-weapon (P3.2): 'auto' weapons (rifle/smg) fire while held at
+ *            fireRate shots/sec; 'single' weapons (shotgun) fire once per click (press edge).
+ * Switch:    1 / 2 / 3 select rifle / shotgun / smg (WEAPONS order). Each weapon keeps its own mag.
+ * Reload:    R key — refills the ACTIVE weapon's mag over its reloadTime.
  * Restart:   R key while dead — requests a full scene restart.
  *
  * All movement is scaled by delta time — frame-rate independent.
@@ -52,6 +54,10 @@ export class Player extends Physics.Arcade.Sprite {
       jumpUp: scene.input.keyboard.addKey(Input.Keyboard.KeyCodes.UP),
       sprint: scene.input.keyboard.addKey(Input.Keyboard.KeyCodes.SHIFT),
       reload: scene.input.keyboard.addKey(Input.Keyboard.KeyCodes.R),
+      // Weapon-switch keys — order-matched to Object.keys(CONFIG.WEAPONS) in update().
+      one: scene.input.keyboard.addKey(Input.Keyboard.KeyCodes.ONE),
+      two: scene.input.keyboard.addKey(Input.Keyboard.KeyCodes.TWO),
+      three: scene.input.keyboard.addKey(Input.Keyboard.KeyCodes.THREE),
     };
 
     // --- Health ---
@@ -78,12 +84,38 @@ export class Player extends Physics.Arcade.Sprite {
     this.coyoteTimer = 0; // s — grace window after leaving ground
     this.jumpBufferTimer = 0; // s — buffered jump press
 
-    // --- Shooting state ---
+    // --- Shooting / weapon state (P3.2) ---
     this.bulletGroup = bulletGroup;
-    this.shootTimer = 0; // s — cooldown until next shot allowed
-    this.ammo = CONFIG.weapon.magSize;
+    this.shootTimer = 0; // s — cooldown until next shot allowed. SHARED across weapons (carries across a
+    // switch) so you can't spam-switch to dodge fire-rate.
+    this.currentWeaponId = CONFIG.defaultWeaponId; // id into CONFIG.WEAPONS; stats read live via get weapon()
+    // Per-weapon CURRENT mag, keyed by weapon id (reserve ammo is out of scope until P3.5). Each mag
+    // starts full and is tracked independently, so switching weapons preserves each one's remaining rounds.
+    this.ammo = {};
+    for (const id of Object.keys(CONFIG.WEAPONS)) this.ammo[id] = CONFIG.WEAPONS[id].magSize;
     this.reloading = false;
-    this.reloadTimer = 0; // s — remaining reload time
+    this.reloadTimer = 0; // s — remaining reload time (of the active weapon)
+    this.prevPointerDown = false; // last frame's pointer state — for 'single' fire-mode press-edge detection
+  }
+
+  /** The active weapon's stats, read LIVE from the data table (never snapshotted — a copy would go
+   * stale the moment P3.3's upgrades mutate a WEAPONS row). */
+  get weapon() {
+    return CONFIG.WEAPONS[this.currentWeaponId];
+  }
+
+  /**
+   * Switch the active weapon (keys 1/2/3). No-op if it's already active or the player is dead/won.
+   * Cancels any in-progress reload (no refund) but leaves the SHARED shootTimer untouched, so
+   * spam-switching can't beat the fire-rate cadence. Per-weapon mags are preserved (each lives in
+   * this.ammo[id]); the swap only changes which id is active.
+   */
+  switchWeapon(id) {
+    if (this.dead || this.won) return;
+    if (id === this.currentWeaponId || !CONFIG.WEAPONS[id]) return;
+    this.currentWeaponId = id;
+    this.reloading = false;
+    this.reloadTimer = 0;
   }
 
   /** Call from GameScene.update(time, delta) */
@@ -99,9 +131,10 @@ export class Player extends Physics.Arcade.Sprite {
     }
 
     const dt = delta / 1000;
-    const { moveSpeed, sprintMultiplier, jumpVelocity, coyoteTime, jumpBuffer, weapon,
+    const { moveSpeed, sprintMultiplier, jumpVelocity, coyoteTime, jumpBuffer,
             invulnOnHit, knockback, knockbackDuration } = CONFIG;
     const { left, right, arrowLeft, arrowRight, jump, jumpUp, sprint, reload } = this.keys;
+    const weapon = this.weapon; // live active-weapon stats (getter → CONFIG.WEAPONS[currentWeaponId])
     const onGround = this.body.blocked.down;
     const pointer = this.scene.input.activePointer;
 
@@ -176,16 +209,28 @@ export class Player extends Physics.Arcade.Sprite {
       }
     }
 
-    // --- Shooting (semi-auto: hold to fire at fire-rate cap) ---
-    this.shootTimer = Math.max(0, this.shootTimer - dt);
-
-    if (pointer.isDown && this.shootTimer <= 0 && this.ammo > 0 && !this.reloading && this.aimingForward(pointer)) {
-      this.shootTimer = 1 / weapon.fireRate;
-      this.spawnBullet(); // aim geometry (from the gun tip) lives in spawnBullet
+    // --- Weapon switching (1/2/3 → WEAPONS order) ---
+    const weaponIds = Object.keys(CONFIG.WEAPONS);
+    const switchKeys = [this.keys.one, this.keys.two, this.keys.three];
+    for (let i = 0; i < switchKeys.length && i < weaponIds.length; i++) {
+      if (Input.Keyboard.JustDown(switchKeys[i])) this.switchWeapon(weaponIds[i]);
     }
 
-    // --- Reload ---
-    if (Input.Keyboard.JustDown(reload) && this.ammo < weapon.magSize && !this.reloading) {
+    // --- Shooting — fire mode is per-weapon: 'auto' fires while held, 'single' on the pointer press edge
+    // (Phaser Pointer has no JustDown, so detect the edge against last frame's state). Both share the
+    // same gate: cooldown up, mag has rounds, not reloading, cursor on the forward arc. ---
+    this.shootTimer = Math.max(0, this.shootTimer - dt);
+    const pointerJustDown = pointer.isDown && !this.prevPointerDown;
+    const wantFire = weapon.fireMode === 'single' ? pointerJustDown : pointer.isDown;
+    const mag = this.ammo[this.currentWeaponId];
+
+    if (wantFire && this.shootTimer <= 0 && mag > 0 && !this.reloading && this.aimingForward(pointer)) {
+      this.shootTimer = 1 / weapon.fireRate;
+      this.fireWeapon(); // aim geometry + pellet spread (from the gun tip) lives in fireWeapon
+    }
+
+    // --- Reload (refills the ACTIVE weapon's mag) ---
+    if (Input.Keyboard.JustDown(reload) && this.ammo[this.currentWeaponId] < weapon.magSize && !this.reloading) {
       this.reloading = true;
       this.reloadTimer = weapon.reloadTime;
     }
@@ -193,11 +238,15 @@ export class Player extends Physics.Arcade.Sprite {
     if (this.reloading) {
       this.reloadTimer -= dt;
       if (this.reloadTimer <= 0) {
-        this.ammo = weapon.magSize;
+        this.ammo[this.currentWeaponId] = weapon.magSize;
         this.reloading = false;
         this.reloadTimer = 0;
       }
     }
+
+    // Track pointer state for next frame's press-edge detection. Set UNCONDITIONALLY every live frame
+    // (not inside the fire branch) or 'single' mode would stick down after the first shot and auto-fire.
+    this.prevPointerDown = pointer.isDown;
 
     // --- Facing: sprite + gun flip with movement direction (NOT the mouse) ---
     this.setFlipX(!this.facingRight);
@@ -207,12 +256,6 @@ export class Player extends Physics.Arcade.Sprite {
     this.updateAnimation(onGround, moving, sprint.isDown);
   }
 
-  /**
-   * Spawn one pooled bullet from the gun tip, travelling straight at the cursor.
-   * The muzzle point (mx,my) is the sprite origin (feet) + muzzleOffset on the facing
-   * side (so it tracks the drawn gun); the aim vector is recomputed FROM the tip so
-   * close-range shots point true. Fire-rate/ammo/reload gating stays in update().
-   */
   /**
    * True when the cursor is on the side the character faces (or straight above/below it). Firing is
    * gated on this so you can't shoot "backwards" toward the mouse while facing away — you must turn
@@ -224,7 +267,17 @@ export class Player extends Physics.Arcade.Sprite {
     return (pointer.worldX - this.x) * facingDir >= 0;
   }
 
-  spawnBullet() {
+  /**
+   * Fire the active weapon: one trigger pull = one ammo = `pellets` bullets fanned within ±spreadDeg/2
+   * of the aim vector (spread 0 ⇒ a single straight round, identical to the old rifle). The muzzle
+   * point (mx,my) is the feet origin + muzzleOffset on the facing side (tracks the drawn gun); the aim
+   * is recomputed FROM the tip so close-range shots point true. Each bullet is STAMPED with the weapon's
+   * damage/range/tint at fire time (Bullet.fire) so it's unaffected by a later weapon switch. Ammo
+   * decrements once; muzzle flash / shoot anim / camera shake fire once per shot (not per pellet).
+   * Fire-rate/mag/reload gating stays in update().
+   */
+  fireWeapon() {
+    const weapon = this.weapon;
     const pointer = this.scene.input.activePointer;
     const dir = this.facingRight ? 1 : -1;
     const mx = this.x + dir * CONFIG.muzzleOffset.x; // gun tip on the facing side
@@ -234,21 +287,35 @@ export class Player extends Physics.Arcade.Sprite {
     const dy = pointer.worldY - my;
     const len = Math.hypot(dx, dy);
     if (len === 0) return;
-    const vx = (dx / len) * CONFIG.weapon.bulletSpeed;
-    const vy = (dy / len) * CONFIG.weapon.bulletSpeed;
+    const baseAngle = Math.atan2(dy, dx); // aim FROM the muzzle tip
 
-    const bullet = this.bulletGroup.get(mx, my, CONFIG.TEXTURE_MAP.bullet);
-    if (bullet) {
-      bullet.fire(mx, my, vx, vy);
-      this.ammo--;
-      this.play('player-shoot', true); // shoot pose (one-shot; hurt/death outrank it)
+    // One trigger pull = one ammo, regardless of pellet count.
+    this.ammo[this.currentWeaponId]--;
 
-      // Screen shake — subtle per-shot recoil
-      this.scene.cameras.main.shake(CONFIG.shake.onShoot.duration, CONFIG.shake.onShoot.intensity);
-
-      // Muzzle flash at the gun tip
-      this.scene.muzzleEmitter.explode(CONFIG.particles.muzzle.count, mx, my);
+    // Spawn each pellet, its velocity rotated by a random offset within ±spreadDeg/2 of the aim (0 for a
+    // single straight round). Each is stamped with the firing weapon's stats, so it carries them to impact.
+    const spreadRad = (weapon.spreadDeg * Math.PI) / 180;
+    const stats = { damage: weapon.damage, range: weapon.range, tint: weapon.projectileTint };
+    for (let i = 0; i < weapon.pellets; i++) {
+      const angle = baseAngle + (Math.random() - 0.5) * spreadRad;
+      const vx = Math.cos(angle) * weapon.bulletSpeed;
+      const vy = Math.sin(angle) * weapon.bulletSpeed;
+      const bullet = this.bulletGroup.get(mx, my, CONFIG.TEXTURE_MAP.bullet);
+      if (bullet) bullet.fire(mx, my, vx, vy, stats);
     }
+
+    // --- Per-shot feedback — once per trigger pull, outside the pellet loop ---
+    this.play('player-shoot', true); // shoot pose (one-shot; hurt/death outrank it)
+    this.scene.cameras.main.shake(CONFIG.shake.onShoot.duration, CONFIG.shake.onShoot.intensity);
+
+    // Muzzle flash at the gun tip, scaled to this weapon. Setting the scale op's START (not
+    // setParticleScale, which would drop the start→0 fade) keeps the shrink while sizing the flash:
+    // base scaleStart × the weapon's muzzleScale.
+    const muzzle = CONFIG.particles.muzzle;
+    const flashScale = muzzle.scaleStart * weapon.muzzleScale;
+    this.scene.muzzleEmitter.ops.scaleX.start = flashScale;
+    this.scene.muzzleEmitter.ops.scaleY.start = flashScale;
+    this.scene.muzzleEmitter.explode(muzzle.count, mx, my);
   }
 
   /**

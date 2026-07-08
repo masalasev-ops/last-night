@@ -35,9 +35,10 @@ export class GameScene extends Scene {
     this.add.rectangle(markerX, markerY, endMarker.width, endMarker.height, hexToInt(palette.bullet));
 
     // --- Bullet pool (created before Player so we can pass it in) ---
+    // Shared across all weapons (P3.2) — sized for the worst case (SMG spray + shotgun volley).
     this.bullets = this.physics.add.group({
       classType: Bullet,
-      maxSize: CONFIG.weapon.bulletPoolSize,
+      maxSize: CONFIG.bulletPoolSize,
       runChildUpdate: true, // calls preUpdate on active bullets each frame
     });
 
@@ -75,7 +76,9 @@ export class GameScene extends Scene {
     this.muzzleEmitter = this.add.particles(0, 0, '__PARTICLE_MUZZLE', {
       speed: { min: muzzle.speedMin, max: muzzle.speedMax },
       angle: { min: 0, max: 360 },
-      scale: { start: 0.8, end: 0 },
+      // Base flash scale; Player.fireWeapon overrides the start per shot (base × weapon.muzzleScale),
+      // preserving the start→0 fade. end 0 stays fixed.
+      scale: { start: muzzle.scaleStart, end: 0 },
       lifespan: muzzle.lifespan,
       emitting: false,
     });
@@ -405,7 +408,7 @@ export class GameScene extends Scene {
     this.bloodEmitter.explode(CONFIG.particles.blood.count, enemy.x, enemy.y);
 
     bullet.deactivate();
-    enemy.takeDamage(CONFIG.weapon.damage);
+    enemy.takeDamage(bullet.damage); // per-shot damage stamped at fire time (P3.2), not a global lookup
   }
 
   /**

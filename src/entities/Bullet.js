@@ -9,9 +9,12 @@ import { CONFIG } from '../config.js';
  *
  * Lifecycle:
  *   - Created once by the pool (Group.get), starts inactive/invisible.
- *   - fire(x, y, vx, vy) → activates, repositions, sets velocity.
- *   - preUpdate() tracks distance travelled; deactivates when past bulletRange.
- *   - deactivate() → invisible, stopped, returned to pool for reuse.
+ *   - fire(x, y, vx, vy, stats) → activates, repositions, sets velocity, and STAMPS the shot's
+ *     damage/range/tint onto the bullet (P3.2). Per-shot properties live on the projectile, not on a
+ *     global weapon — so a weapon switch (or two weapons' rounds in flight at once) never mutates a
+ *     round already travelling: it carries the stats it was fired with to impact.
+ *   - preUpdate() tracks distance travelled; deactivates when past its own `range`.
+ *   - deactivate() → invisible, stopped, tint cleared, returned to pool for reuse.
  *
  * No `new Bullet()` in the hot path — the group reuses inactive members.
  */
@@ -30,21 +33,29 @@ export class Bullet extends Physics.Arcade.Sprite {
   }
 
   /**
-   * Activate this bullet and send it flying from (x, y) at the given velocity.
-   * Called by Player.spawnBullet() via group.get().
+   * Activate this bullet and send it flying from (x, y) at the given velocity, stamping the shot's
+   * per-projectile properties. Called by Player.fireWeapon() via group.get().
    *
    * @param {number} x  spawn position
    * @param {number} y
    * @param {number} velocityX  px/s
    * @param {number} velocityY  px/s
+   * @param {{damage:number, range:number, tint:?number}} stats  resolved from the firing weapon; the
+   *   bullet carries these to impact so a mid-flight weapon switch can't change them. tint == null →
+   *   the bare bullet texture (rifle); a non-white tint multiply-colours it (shotgun/smg).
    */
-  fire(x, y, velocityX, velocityY) {
+  fire(x, y, velocityX, velocityY, stats) {
     this.setPosition(x, y);
     this.setActive(true);
     this.setVisible(true);
     this.body.enable = true;
     this.body.setVelocity(velocityX, velocityY);
     this.distanceTraveled = 0;
+
+    // Stamp per-shot properties onto the projectile (the P3.2 refactor).
+    this.damage = stats.damage;
+    this.range = stats.range;
+    stats.tint == null ? this.clearTint() : this.setTint(stats.tint);
   }
 
   /**
@@ -62,7 +73,7 @@ export class Bullet extends Physics.Arcade.Sprite {
     const vy = this.body.velocity.y;
     this.distanceTraveled += Math.sqrt(vx * vx + vy * vy) * (delta / 1000);
 
-    if (this.distanceTraveled >= CONFIG.weapon.bulletRange) {
+    if (this.distanceTraveled >= this.range) {
       this.deactivate();
       return;
     }
@@ -74,12 +85,14 @@ export class Bullet extends Physics.Arcade.Sprite {
     }
   }
 
-  /** Return this bullet to the pool — invisible, stopped, inactive. */
+  /** Return this bullet to the pool — invisible, stopped, inactive, tint cleared so a reused round
+   * doesn't inherit a stale weapon tint. */
   deactivate() {
     this.setActive(false);
     this.setVisible(false);
     this.body.enable = false;
     this.body.stop();
     this.distanceTraveled = 0;
+    this.clearTint();
   }
 }
