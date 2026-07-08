@@ -52,11 +52,38 @@ export class Enemy extends Physics.Arcade.Sprite {
    * @param {string} type  'Zombie_1'..'Zombie_4'
    */
   spawn(x, y, type) {
-    this.type = type;
+    this.type = type; // roster id — drives salvageDrop / spawn lookups; stays the type even when `sheet` reskins
     // Per-type roster entry selects the FSM behavior branch (P3.1). Default 'melee' if unlisted.
     const def = CONFIG.ENEMIES[type] ?? { aiProfile: 'melee' };
     this.aiProfile = def.aiProfile;
     this.def = def;
+    // Animation/texture key (P3.4). A data variant may set `sheet` to borrow another type's frames (Runner
+    // renders Zombie_2, Tank renders Zombie_3); anims are played from animKey, while this.type stays the id.
+    this.animKey = def.sheet ?? type;
+
+    // --- Flyer (P3.4): the one new profile — ignores gravity, homes in 2D. Placeholder blob (anim-less),
+    // like the Spitter's blob-fallback path. Centre-origin (airborne, not feet-grounded). ---
+    if (this.aiProfile === 'flyer') {
+      const body = def.body;
+      const artScale = def.artScale ?? 1;
+      this.animated = false;         // blob: the animation controller must not try to play frames
+      this.facesLeft = body.facesLeft;
+      this.setTexture(CONFIG.placeholder.FLYER.key);
+      this.setOrigin(body.originX, body.originY);
+      this.setScale(artScale);
+      this.setPosition(x, y);
+      this.setActive(true);
+      this.setVisible(true);
+      def.tint != null ? this.setTint(def.tint) : this.clearTint();
+      this.body.enable = true;
+      this.body.setAllowGravity(false); // the defining trait — it hovers and homes, unaffected by world gravity
+      this.body.setSize(body.width, body.height);
+      this.body.setOffset(body.offsetX, body.offsetY);
+      this.deadDuration = 0;           // no death anim (blob) — DEAD just lingers corpseLinger
+      this.health = def.maxHealth ?? CONFIG.enemy.maxHealth;
+      this.resetFsm(x);
+      return;
+    }
 
     if (this.aiProfile === 'ranged') {
       // Ranged Spitter. Real art enters through the swap-point: if the real sheet TEXTURE loaded,
@@ -100,28 +127,32 @@ export class Enemy extends Physics.Arcade.Sprite {
       return;
     }
 
-    // --- Melee (existing Zombie behavior, unchanged) ---
-    const body = ZOMBIE_BODY[type];
+    // --- Melee (Zombie_N + data-variant reskins Runner/Tank). Zombie_N inherits every default → identical
+    // to before; a variant borrows a `sheet`'s frames (animKey) and reads its own stats/tint/scale/body. ---
+    const sheetKey = this.animKey;                       // = def.sheet ?? type (Runner→Zombie_2, Tank→Zombie_3)
+    const body = this.def.body ?? ZOMBIE_BODY[sheetKey]; // explicit body from config (Tank scales the sheet's)
+    const artScale = this.def.artScale ?? 1;
     this.animated = true; // real zombie sheets always load — the controller animates normally
     this.facesLeft = body.facesLeft;
 
-    // Real art fitted to an explicit torso body (art never drives the hitbox).
-    this.setTexture(`${type}-idle`);
+    // Real art fitted to an explicit torso body (art never drives the hitbox). Arcade scales body+offset
+    // by artScale around the feet origin on the next step, so a rescaled variant stays fitted + grounded.
+    this.setTexture(`${sheetKey}-idle`);
     this.setOrigin(body.originX, body.originY); // feet
-    this.setScale(1);
+    this.setScale(artScale);
     this.setPosition(x, y);
     this.setActive(true);
     this.setVisible(true);
-    this.clearTint();
+    this.def.tint != null ? this.setTint(this.def.tint) : this.clearTint(); // reskin tint (variants read distinctly)
     this.body.enable = true;
     this.body.setSize(body.width, body.height);   // after setTexture so the frame is set
     this.body.setOffset(body.offsetX, body.offsetY);
-    this.play(`${type}-idle`);
+    this.play(`${sheetKey}-idle`);
 
     // Death-animation length read from the registered anim (no magic number).
-    this.deadDuration = this.scene.anims.get(`${type}-dead`).duration / 1000;
+    this.deadDuration = this.scene.anims.get(`${sheetKey}-dead`).duration / 1000;
 
-    this.health = CONFIG.enemy.maxHealth;
+    this.health = this.def.maxHealth ?? CONFIG.enemy.maxHealth;
     this.resetFsm(x);
   }
 
@@ -199,18 +230,26 @@ export class Enemy extends Physics.Arcade.Sprite {
       return;
     }
 
-    const { moveSpeed, chaseSpeed, detectionRadius, attackRange, attackCooldown, patrolRange, maxVerticalReach, climbHeight, retreatDistance } = CONFIG.enemy;
+    // P3.4: resolve every shared stat per-type — this.def.<stat> ?? CONFIG.enemy.<stat> — so ANY profile
+    // (not just ranged) reads its own overrides from data. Zombie_N has no overrides → all fall back to
+    // CONFIG.enemy (identical to before). This is what makes Runner/Tank pure data rows: no code branch.
+    const stat = (k) => this.def[k] ?? CONFIG.enemy[k];
+    const moveSpeed = stat('moveSpeed');
+    const chaseSpeed = stat('chaseSpeed');
+    const detectionRadius = stat('detectionRadius');
+    const attackRange = stat('attackRange');
+    const attackCooldown = stat('attackCooldown');
+    const patrolRange = stat('patrolRange');
+    const maxVerticalReach = stat('maxVerticalReach');
+    const climbHeight = stat('climbHeight');
+    const retreatDistance = stat('retreatDistance');
     const player = this.player;
-
-    // Profile-aware locals — melee uses the shared CONFIG.enemy tuning; ranged uses its roster entry.
     const isRanged = this.aiProfile === 'ranged';
-    const moveSpd = isRanged ? this.def.moveSpeed : moveSpeed;         // patrol / kite speed
-    const detectR = isRanged ? this.def.detectionRadius : detectionRadius;
 
     // Guard: if player ref isn't set yet, stand idle
     if (!player || !player.active) {
       this.body.setVelocityX(0);
-      this.playIfExists(`${this.type}-idle`, true);
+      this.playIfExists(`${this.animKey}-idle`, true);
       return;
     }
 
@@ -218,6 +257,25 @@ export class Enemy extends Physics.Arcade.Sprite {
     const dy = player.y - this.y;
     const distToPlayer = Math.sqrt(dx * dx + dy * dy);
     const dirToPlayer = player.x >= this.x ? 1 : -1;
+
+    // --- Flyer (P3.4): homes in 2D toward the player and ignores ALL perch/RETREAT/climb logic (it can
+    // reach a perched player). Ticks its own attack cooldown here since it returns before the ATTACK-state
+    // tick, and deals touchDamage on contact via the same idiom melee ATTACK uses — no new FSM state. ---
+    if (this.aiProfile === 'flyer') {
+      this.attackTimer = Math.max(0, this.attackTimer - dt);
+      if (distToPlayer <= detectionRadius) {
+        const len = distToPlayer || 1; // zero-guard the normalization (avoid /0 → NaN velocity)
+        this.body.setVelocity((dx / len) * this.def.flySpeed, (dy / len) * this.def.flySpeed);
+        this.faceDir(dirToPlayer);
+        if (distToPlayer <= attackRange && this.attackTimer <= 0) {
+          player.takeDamage(stat('touchDamage'), this.x);
+          this.attackTimer = attackCooldown;
+        }
+      } else {
+        this.body.setVelocity(0, 0); // hover in place until the player comes within detection
+      }
+      return; // never falls through to the melee/ranged perch FSM below
+    }
 
     // Player is standing on a platform overhead, out of reach (zombies can't jump — climbHeight is
     // the most they can step up). Requires the player to be *grounded* above us — not just mid-leap —
@@ -236,12 +294,12 @@ export class Enemy extends Physics.Arcade.Sprite {
       case STATE.PATROL: {
         // MELEE only: a player who landed on a platform overhead → back off, unless we already gave up
         // on this perch (gaveUp stops it firing every frame). Ranged enemies don't retreat — they lob.
-        if (!isRanged && playerUnreachableAbove && distToPlayer <= detectR && !this.gaveUp) {
+        if (!isRanged && playerUnreachableAbove && distToPlayer <= detectionRadius && !this.gaveUp) {
           this.enterRetreat();
           break;
         }
 
-        this.body.setVelocityX(moveSpd * this.patrolDir);
+        this.body.setVelocityX(moveSpeed * this.patrolDir);
         this.faceDir(this.patrolDir);
 
         if (this.x >= this.spawnX + patrolRange) this.patrolDir = -1;
@@ -250,8 +308,8 @@ export class Enemy extends Physics.Arcade.Sprite {
         // Engage: ranged ignores vertical (it can arc acid up to a perched player); melee needs a
         // reachable, non-perched player (a camper overhead is handled by the retreat above).
         const canEngage = isRanged
-          ? distToPlayer <= detectR
-          : distToPlayer <= detectR && Math.abs(dy) <= maxVerticalReach && !playerUnreachableAbove;
+          ? distToPlayer <= detectionRadius
+          : distToPlayer <= detectionRadius && Math.abs(dy) <= maxVerticalReach && !playerUnreachableAbove;
         if (canEngage) this.state = STATE.CHASE;
         break;
       }
@@ -263,7 +321,7 @@ export class Enemy extends Physics.Arcade.Sprite {
           if (distToPlayer <= this.def.firingRange) {
             this.state = STATE.ATTACK;
             this.attackTimer = 0; // ready to spit immediately
-          } else if (distToPlayer > detectR * 1.5) {
+          } else if (distToPlayer > detectionRadius * 1.5) {
             this.state = STATE.PATROL; // lost the player
           }
           break;
@@ -296,7 +354,7 @@ export class Enemy extends Physics.Arcade.Sprite {
           if (this.attackTimer <= 0) {
             this.scene.spawnAcid(this, player); // lob one arcing glob at the player (no touch damage)
             this.attackTimer = this.def.attackCooldown;
-            this.playIfExists(`${this.type}-attack`); // discrete spit anim (placeholder: no-op)
+            this.playIfExists(`${this.animKey}-attack`); // discrete spit anim (placeholder: no-op)
           }
           if (distToPlayer > this.def.firingRange) this.state = STATE.CHASE;
           break;
@@ -313,9 +371,9 @@ export class Enemy extends Physics.Arcade.Sprite {
 
         this.attackTimer = Math.max(0, this.attackTimer - dt);
         if (this.attackTimer <= 0) {
-          player.takeDamage(CONFIG.enemy.touchDamage, this.x);
+          player.takeDamage(stat('touchDamage'), this.x);
           this.attackTimer = attackCooldown;
-          this.play(`${this.type}-attack`); // restart the swing on the discrete strike only
+          this.play(`${this.animKey}-attack`); // restart the swing on the discrete strike only
         }
 
         if (distToPlayer > attackRange) this.state = STATE.CHASE;
@@ -374,7 +432,7 @@ export class Enemy extends Physics.Arcade.Sprite {
     if (this.state === STATE.HURT) anim = 'hurt';
     else if (this.state === STATE.PATROL || this.state === STATE.CHASE || this.state === STATE.RETREAT) anim = 'walk';
     else anim = 'idle';
-    this.playIfExists(`${this.type}-${anim}`, true); // guarded: placeholder spitter has no anims
+    this.playIfExists(`${this.animKey}-${anim}`, true); // guarded: placeholder spitter has no anims
   }
 
   /**
@@ -391,7 +449,7 @@ export class Enemy extends Physics.Arcade.Sprite {
     if (this.health <= 0) {
       this.state = STATE.DEAD;
       this.scene.awardSalvage(this.type, this.x, this.y); // P3.3: single kill hook → salvage + floating +N
-      this.playIfExists(`${this.type}-dead`); // one-shot; holds last frame (placeholder: no-op)
+      this.playIfExists(`${this.animKey}-dead`); // one-shot; holds last frame (placeholder: no-op)
       this.body.setVelocity(0, 0);
       this.body.enable = false; // corpse: no collisions/overlaps, stays put
       this.clearTint();
@@ -401,7 +459,7 @@ export class Enemy extends Physics.Arcade.Sprite {
 
     this.state = STATE.HURT;
     this.hurtTimer = CONFIG.enemy.hurtDuration;
-    this.playIfExists(`${this.type}-hurt`); // trigger on the hit; controller keeps it during HURT (placeholder: no-op)
+    this.playIfExists(`${this.animKey}-hurt`); // trigger on the hit; controller keeps it during HURT (placeholder: no-op)
     this.setTint(0xffffff);
   }
 
@@ -411,6 +469,8 @@ export class Enemy extends Physics.Arcade.Sprite {
     this.setVisible(false);
     this.body.enable = false;
     this.body.stop();
+    this.body.setAllowGravity(true); // P3.4 pooling-safety: restore the default so a pooled Flyer (gravity
+    // off) reused as a grounded zombie/spitter doesn't float. Only the flyer spawn() turns gravity off.
     this.clearTint();
     this.state = STATE.PATROL;
     this.player = null;

@@ -248,13 +248,13 @@ export class GameScene extends Scene {
       }
     }
 
-    // Debug: right-click spawns a random-type zombie at the pointer position
+    // Debug: right-click spawns a random-type enemy at the pointer position (P3.4: incl. the new roster)
     if (this.debugOn && this.input.activePointer.rightButtonDown()) {
       const worldX = this.input.activePointer.worldX;
       const worldY = this.input.activePointer.worldY;
       const enemy = this.enemies.get(worldX, worldY);
       if (enemy) {
-        const types = ['Zombie_1', 'Zombie_2', 'Zombie_3', 'Zombie_4'];
+        const types = ['Zombie_1', 'Zombie_2', 'Zombie_3', 'Zombie_4', 'Runner', 'Tank', 'Flyer'];
         enemy.spawn(worldX, worldY, types[Math.floor(Math.random() * types.length)]);
         enemy.player = this.player;
       }

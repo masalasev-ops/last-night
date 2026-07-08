@@ -190,6 +190,22 @@ export class BootScene extends Scene {
     g.generateTexture(sp.key, sp.width, sp.height);
     g.destroy();
 
+    // --- Flyer (P3.4): a small bat-like blob at FLYER dims. Drawn in a LIGHT base so each Flyer row's
+    // non-white `tint` colourises it (a dark base would swallow the tint). Wings + dark eyes read as an
+    // airborne creature. Real per-type art swaps in later via the swap-point (like the Spitter). ---
+    g = this.make.graphics({ x: 0, y: 0, add: false });
+    const fl = placeholder.FLYER;
+    const fcx = fl.width / 2, fcy = fl.height / 2;
+    g.fillStyle(hexToInt(palette.flyer), 1);
+    g.fillTriangle(fcx - 4, fcy, 2, fcy - 12, 2, fcy + 6);                       // left wing
+    g.fillTriangle(fcx + 4, fcy, fl.width - 2, fcy - 12, fl.width - 2, fcy + 6); // right wing
+    g.fillEllipse(fcx, fcy, 20, 22);                                            // body
+    g.fillStyle(0x0a0a0f, 1); // two dark eyes
+    g.fillCircle(fcx - 4, fcy - 2, 2);
+    g.fillCircle(fcx + 4, fcy - 2, 2);
+    g.generateTexture(fl.key, fl.width, fl.height);
+    g.destroy();
+
     // --- Acid glob (P3.1): a small green disc ---
     g = this.make.graphics({ x: 0, y: 0, add: false });
     const ac = placeholder.ACID;

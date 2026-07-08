@@ -288,14 +288,21 @@ export class Player extends Physics.Arcade.Sprite {
     const weapon = this.weapon;
     const pointer = this.scene.input.activePointer;
     const dir = this.facingRight ? 1 : -1;
-    const mx = this.x + dir * CONFIG.muzzleOffset.x; // gun tip on the facing side
+    const mx = this.x + dir * CONFIG.muzzleOffset.x; // gun tip on the facing side — muzzle FLASH origin
     const my = this.y + CONFIG.muzzleOffset.y;
 
-    const dx = pointer.worldX - mx;
-    const dy = pointer.worldY - my;
+    // Bullets spawn from the player's CENTRE at gun height, NOT the gun tip. A tip-spawned round (26px
+    // ahead) overshoots a point-blank enemy sitting between the player and the tip: firing at anything on
+    // the enemy's far side sends the bullet away from it → the "can't hit when too close" bug. Spawning at
+    // centre removes that forward blind spot and still aims true up close. The flash stays at the tip (mx,my).
+    const bx = this.x;
+    const by = my;
+
+    const dx = pointer.worldX - bx;
+    const dy = pointer.worldY - by;
     const len = Math.hypot(dx, dy);
     if (len === 0) return;
-    const baseAngle = Math.atan2(dy, dx); // aim FROM the muzzle tip
+    const baseAngle = Math.atan2(dy, dx); // aim FROM the bullet spawn (player centre)
 
     // One trigger pull = one ammo, regardless of pellet count.
     this.ammo[this.currentWeaponId]--;
@@ -308,8 +315,8 @@ export class Player extends Physics.Arcade.Sprite {
       const angle = baseAngle + (Math.random() - 0.5) * spreadRad;
       const vx = Math.cos(angle) * weapon.bulletSpeed;
       const vy = Math.sin(angle) * weapon.bulletSpeed;
-      const bullet = this.bulletGroup.get(mx, my, CONFIG.TEXTURE_MAP.bullet);
-      if (bullet) bullet.fire(mx, my, vx, vy, stats);
+      const bullet = this.bulletGroup.get(bx, by, CONFIG.TEXTURE_MAP.bullet);
+      if (bullet) bullet.fire(bx, by, vx, vy, stats);
     }
 
     // --- Per-shot feedback — once per trigger pull, outside the pellet loop ---

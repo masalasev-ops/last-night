@@ -131,6 +131,34 @@ export const CONFIG = {
       // idle-frame measurement (mouth ≈ 70px above the feet).
       muzzleOffset: { x: 0, y: -70 },
     },
+
+    // --- P3.4 roster expansion. Runner + Tank are PURE DATA on the melee FSM (no code branch): they only
+    // work because Enemy.preUpdate now resolves this.def.<stat> ?? CONFIG.enemy.<stat> and `sheet` lets a
+    // type borrow an existing zombie's frames (rendered via a `tint` + `artScale` so variants read now).
+    // Real per-type art is a later swap-point drop. All numbers are tuning starting points. ---
+    Runner: {
+      aiProfile: 'melee', sheet: 'Zombie_2', tint: 0xff6a6a, artScale: 0.85, // small + red = fast rusher
+      maxHealth: 15, moveSpeed: 180, chaseSpeed: 360, touchDamage: 8, attackCooldown: 0.6,
+      salvageDrop: { min: 1, max: 2 },
+    },
+    Tank: {
+      aiProfile: 'melee', sheet: 'Zombie_3', tint: 0x8faf7a, artScale: 1.28, // big + sickly-green = bullet sponge
+      maxHealth: 90, moveSpeed: 70, chaseSpeed: 110, touchDamage: 22, attackCooldown: 1.2,
+      salvageDrop: { min: 3, max: 5 },
+      // Body = Zombie_3's torso box scaled by artScale (Arcade scales body+offset around the feet origin,
+      // as the Spitter does), so it stays fitted + grounded at 1.28×. Fine without an explicit override
+      // in playtest; add a `body` here only if the debug overlay shows it doesn't hug the bulkier art.
+    },
+    // Flyer — the ONE new aiProfile branch: ignores gravity, homes toward the player on both axes (can
+    // reach a perched player), deals touchDamage on contact. Placeholder blob until art lands.
+    Flyer: {
+      aiProfile: 'flyer', tint: 0xc79aff, artScale: 0.7,          // purple, small, airborne
+      maxHealth: 20, flySpeed: 200, detectionRadius: 420, touchDamage: 10, attackCooldown: 0.8,
+      salvageDrop: { min: 2, max: 3 },
+      // Explicit blob body (art never drives it). CENTRE origin (0.5,0.5) — airborne, not feet-grounded —
+      // centred in the 44×32 placeholder; Arcade scales it by artScale on the next step.
+      body: { width: 30, height: 22, originX: 0.5, originY: 0.5, offsetX: 7, offsetY: 5, facesLeft: false },
+    },
   },
 
   // Acid projectile (P3.1) — pooled, ballistic: it arcs under its own gravityY so it can reach a player
@@ -235,6 +263,7 @@ export const CONFIG = {
     hudText: '#c8ccd4',
     spitter: '#4faf5a', // P3.1 placeholder spitter blob (green)
     acid: '#7fe08a',    // P3.1 acid projectile + splat (green)
+    flyer: '#c8ccd4',   // P3.4 flyer blob base — LIGHT so each Flyer row's non-white `tint` colourises it
   },
 
   placeholder: {
@@ -244,6 +273,7 @@ export const CONFIG = {
     PICKUP: { key: 'placeholder-pickup', width: 28, height: 28 }, // green medic box fallback
     SPITTER: { key: 'spitter', width: 40, height: 52 }, // P3.1 ranged-enemy blob (real art swaps in later)
     ACID: { key: 'acid', width: 12, height: 12 },       // P3.1 acid glob
+    FLYER: { key: 'flyer', width: 44, height: 32 },     // P3.4 flying-enemy blob (real art swaps in later)
   },
 
   // Single map of entity type → texture key. This is the future art swap-point
@@ -306,6 +336,12 @@ export const CONFIG = {
       { x: 3360, y: 524, type: 'Zombie_4' },
       { x: 3440, y: 524, type: 'Zombie_1' },
       { x: 3520, y: 524, type: 'Zombie_2' },
+      // P3.4 mixed roster cluster (~x2050–2300, open ground before the x2500 zombie): a Tank flanked by
+      // two Runners, with a Flyer patrolling the air over the gap — demonstrates the size/speed/height mix.
+      { x: 2060, y: 524, type: 'Runner' },
+      { x: 2180, y: 524, type: 'Tank' },
+      { x: 2300, y: 524, type: 'Runner' },
+      { x: 2180, y: 390, type: 'Flyer' },
       // P3.1 ranged Spitter — on the ground between the mid-crossing ledges (#3 x1360 / #4 x1616) so a
       // player perched on x1360 (rise ~100px) sits inside firingRange and the spitter must lob acid up.
       { x: 1500, y: 524, type: 'Spitter' },
