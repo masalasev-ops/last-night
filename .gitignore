@@ -12,6 +12,9 @@ dist
 dist-ssr
 *.local
 
+# AI-generated art staging (PixelLab) — regenerated via MCP, not tracked
+public/assets/ai-generated/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

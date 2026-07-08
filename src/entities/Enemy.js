@@ -53,6 +53,32 @@ export class Enemy extends Physics.Arcade.Sprite {
    */
   spawn(x, y, type) {
     this.type = type;
+    // Per-type roster entry selects the FSM behavior branch (P3.1). Default 'melee' if unlisted.
+    const def = CONFIG.ENEMIES[type] ?? { aiProfile: 'melee' };
+    this.aiProfile = def.aiProfile;
+    this.def = def;
+
+    if (this.aiProfile === 'ranged') {
+      // Ranged placeholder (Spitter): a generated blob, no spritesheet/anims. Explicit body from config.
+      const body = def.body;
+      this.facesLeft = body.facesLeft;
+      this.setTexture(CONFIG.placeholder.SPITTER.key);
+      this.setOrigin(body.originX, body.originY); // feet
+      this.setScale(1);
+      this.setPosition(x, y);
+      this.setActive(true);
+      this.setVisible(true);
+      this.clearTint();
+      this.body.enable = true;
+      this.body.setSize(body.width, body.height);
+      this.body.setOffset(body.offsetX, body.offsetY);
+      this.deadDuration = 0; // no death anim for the placeholder — DEAD just lingers corpseLinger
+      this.health = def.maxHealth;
+      this.resetFsm(x);
+      return;
+    }
+
+    // --- Melee (existing Zombie behavior, unchanged) ---
     const body = ZOMBIE_BODY[type];
     this.facesLeft = body.facesLeft;
 
@@ -72,8 +98,12 @@ export class Enemy extends Physics.Arcade.Sprite {
     // Death-animation length read from the registered anim (no magic number).
     this.deadDuration = this.scene.anims.get(`${type}-dead`).duration / 1000;
 
-    // --- FSM reset ---
     this.health = CONFIG.enemy.maxHealth;
+    this.resetFsm(x);
+  }
+
+  /** Reset the shared FSM state/timers (health is set per-profile before this). */
+  resetFsm(x) {
     this.state = STATE.PATROL;
     this.spawnX = x; // anchor for patrol range
     this.patrolDir = 1; // 1 = right, -1 = left
@@ -83,6 +113,23 @@ export class Enemy extends Physics.Arcade.Sprite {
     this.retreatDir = 1; // walk-away direction while retreating (set on entry to RETREAT)
     this.gaveUp = false; // true after a bounded retreat: don't re-chase/re-retreat this perch until
     // the player becomes reachable again (prevents an endless retreat↔patrol oscillation).
+  }
+
+  /**
+   * Ranged kite: hold a preferred-distance band from the player — approach if farther than max, back
+   * away if closer than min, else stop and face. Shared by the ranged CHASE and ATTACK branches.
+   */
+  kite(dirToPlayer, distToPlayer) {
+    const { min, max } = this.def.preferredRange;
+    this.faceDir(dirToPlayer);
+    if (distToPlayer > max) this.body.setVelocityX(this.def.moveSpeed * dirToPlayer);
+    else if (distToPlayer < min) this.body.setVelocityX(-this.def.moveSpeed * dirToPlayer);
+    else this.body.setVelocityX(0);
+  }
+
+  /** Play an animation only if it's registered (the anim-less placeholder spitter no-ops safely). */
+  playIfExists(key, ignoreIfPlaying) {
+    if (this.scene.anims.exists(key)) this.play(key, ignoreIfPlaying);
   }
 
   /**
@@ -127,10 +174,15 @@ export class Enemy extends Physics.Arcade.Sprite {
     const { moveSpeed, chaseSpeed, detectionRadius, attackRange, attackCooldown, patrolRange, maxVerticalReach, climbHeight, retreatDistance } = CONFIG.enemy;
     const player = this.player;
 
+    // Profile-aware locals — melee uses the shared CONFIG.enemy tuning; ranged uses its roster entry.
+    const isRanged = this.aiProfile === 'ranged';
+    const moveSpd = isRanged ? this.def.moveSpeed : moveSpeed;         // patrol / kite speed
+    const detectR = isRanged ? this.def.detectionRadius : detectionRadius;
+
     // Guard: if player ref isn't set yet, stand idle
     if (!player || !player.active) {
       this.body.setVelocityX(0);
-      this.play(`${this.type}-idle`, true);
+      this.playIfExists(`${this.type}-idle`, true);
       return;
     }
 
@@ -154,29 +206,41 @@ export class Enemy extends Physics.Arcade.Sprite {
       // player perched on a platform above is simply ignored here (the retreat is driven from CHASE/
       // ATTACK, never from PATROL — re-triggering it here caused an endless walk off-screen). ---
       case STATE.PATROL: {
-        // Player just landed on a platform overhead (e.g. mid-patrol, or during the airborne frames
-        // of a jump that our CHASE exit dropped us here for) → back off, unless we already gave up
-        // on this perch. gaveUp stops this from firing every frame (endless walk-away).
-        if (playerUnreachableAbove && distToPlayer <= detectionRadius && !this.gaveUp) {
+        // MELEE only: a player who landed on a platform overhead → back off, unless we already gave up
+        // on this perch (gaveUp stops it firing every frame). Ranged enemies don't retreat — they lob.
+        if (!isRanged && playerUnreachableAbove && distToPlayer <= detectR && !this.gaveUp) {
           this.enterRetreat();
           break;
         }
 
-        this.body.setVelocityX(moveSpeed * this.patrolDir);
+        this.body.setVelocityX(moveSpd * this.patrolDir);
         this.faceDir(this.patrolDir);
 
         if (this.x >= this.spawnX + patrolRange) this.patrolDir = -1;
         if (this.x <= this.spawnX - patrolRange) this.patrolDir = 1;
 
-        // Chase only a *reachable* player (a player camping overhead is handled by the retreat above).
-        if (distToPlayer <= detectionRadius && Math.abs(dy) <= maxVerticalReach && !playerUnreachableAbove) {
-          this.state = STATE.CHASE;
-        }
+        // Engage: ranged ignores vertical (it can arc acid up to a perched player); melee needs a
+        // reachable, non-perched player (a camper overhead is handled by the retreat above).
+        const canEngage = isRanged
+          ? distToPlayer <= detectR
+          : distToPlayer <= detectR && Math.abs(dy) <= maxVerticalReach && !playerUnreachableAbove;
+        if (canEngage) this.state = STATE.CHASE;
         break;
       }
 
-      // --- CHASE: move toward player at chase speed ---
+      // --- CHASE: melee closes to touch range; ranged kites to its preferred band, then spits ---
       case STATE.CHASE: {
+        if (isRanged) {
+          this.kite(dirToPlayer, distToPlayer);
+          if (distToPlayer <= this.def.firingRange) {
+            this.state = STATE.ATTACK;
+            this.attackTimer = 0; // ready to spit immediately
+          } else if (distToPlayer > detectR * 1.5) {
+            this.state = STATE.PATROL; // lost the player
+          }
+          break;
+        }
+
         // Player jumped onto a platform we can't reach → give up and retreat (don't hover below).
         if (playerUnreachableAbove) {
           this.enterRetreat();
@@ -196,8 +260,20 @@ export class Enemy extends Physics.Arcade.Sprite {
         break;
       }
 
-      // --- ATTACK: deal damage on cooldown; the swing anim is driven by the strike only ---
+      // --- ATTACK: melee deals touch damage on cooldown; ranged keeps spacing and spits acid ---
       case STATE.ATTACK: {
+        if (isRanged) {
+          this.kite(dirToPlayer, distToPlayer); // hold distance while firing
+          this.attackTimer = Math.max(0, this.attackTimer - dt);
+          if (this.attackTimer <= 0) {
+            this.scene.spawnAcid(this, player); // lob one arcing glob at the player (no touch damage)
+            this.attackTimer = this.def.attackCooldown;
+            this.playIfExists(`${this.type}-attack`); // discrete spit anim (placeholder: no-op)
+          }
+          if (distToPlayer > this.def.firingRange) this.state = STATE.CHASE;
+          break;
+        }
+
         // Player hopped onto a platform overhead mid-melee → stop swinging at nothing, retreat.
         if (playerUnreachableAbove) {
           this.enterRetreat();
@@ -270,7 +346,7 @@ export class Enemy extends Physics.Arcade.Sprite {
     if (this.state === STATE.HURT) anim = 'hurt';
     else if (this.state === STATE.PATROL || this.state === STATE.CHASE || this.state === STATE.RETREAT) anim = 'walk';
     else anim = 'idle';
-    this.play(`${this.type}-${anim}`, true);
+    this.playIfExists(`${this.type}-${anim}`, true); // guarded: placeholder spitter has no anims
   }
 
   /**
@@ -286,7 +362,7 @@ export class Enemy extends Physics.Arcade.Sprite {
 
     if (this.health <= 0) {
       this.state = STATE.DEAD;
-      this.play(`${this.type}-dead`); // one-shot; holds last frame
+      this.playIfExists(`${this.type}-dead`); // one-shot; holds last frame (placeholder: no-op)
       this.body.setVelocity(0, 0);
       this.body.enable = false; // corpse: no collisions/overlaps, stays put
       this.clearTint();
@@ -296,7 +372,7 @@ export class Enemy extends Physics.Arcade.Sprite {
 
     this.state = STATE.HURT;
     this.hurtTimer = CONFIG.enemy.hurtDuration;
-    this.play(`${this.type}-hurt`); // trigger on the hit (no 1-frame delay); controller keeps it during HURT
+    this.playIfExists(`${this.type}-hurt`); // trigger on the hit; controller keeps it during HURT (placeholder: no-op)
     this.setTint(0xffffff);
   }
 

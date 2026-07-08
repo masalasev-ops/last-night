@@ -62,6 +62,41 @@ export const CONFIG = {
     corpseLinger: 1.5, // s — how long the dead pose holds on the ground before pooling out
   },
 
+  // Per-type enemy roster (Phase 3). `aiProfile` selects the FSM behavior branch in Enemy.preUpdate.
+  // Melee zombies keep their shared tuning in CONFIG.enemy + ZOMBIE_BODY (unchanged) — their entry only
+  // declares the profile. The ranged Spitter carries its own full tuning here (the extension pattern
+  // P3.4 reuses). detectionRadius >= firingRange so it's never in firing range while still unengaged.
+  ENEMIES: {
+    Zombie_1: { aiProfile: 'melee' },
+    Zombie_2: { aiProfile: 'melee' },
+    Zombie_3: { aiProfile: 'melee' },
+    Zombie_4: { aiProfile: 'melee' },
+    Spitter: {
+      aiProfile: 'ranged',
+      maxHealth: 24,
+      moveSpeed: 110,                          // px/s (kiting)
+      detectionRadius: 440,                    // px — >= firingRange (no "in range but unengaged" dead zone)
+      preferredRange: { min: 180, max: 320 },  // px — the kite band it holds
+      firingRange: 420,                        // px — max distance it will spit from
+      attackCooldown: 1.6,                     // s between spits
+      scrapDrop: { min: 2, max: 4 },           // unused until P3.3 (scrap economy)
+      // Explicit body fitted to the 40×52 placeholder blob (feet at frame bottom). Art never drives it.
+      body: { width: 28, height: 48, originX: 0.5, originY: 1.0, offsetX: 6, offsetY: 4, facesLeft: false },
+    },
+  },
+
+  // Acid projectile (P3.1) — pooled, ballistic: it arcs under its own gravityY so it can reach a player
+  // perched on a ledge above the spitter (answering the perch exploit with a real threat).
+  acid: {
+    speed: 520,      // px/s — nominal horizontal speed used to choose the lob's flight time
+    gravityY: 900,   // px/s² — projectile-only gravity that gives the arc
+    damage: 12,
+    lifespan: 3.0,   // s before it splats and returns to the pool
+    poolSize: 20,    // max acid globs alive at once
+    bodyRadius: 6,   // px — circular hit body
+    minLobTime: 0.3, // s — floor on flight time so a near-overhead shot can't launch at an absurd speed
+  },
+
   // Pickup (L5). One health chest placed from level data (LEVEL.pickups). `heal` is the HP restored;
   // `body` is the explicit overlap box (art never drives the hitbox — golden rule 4); `scale` fits the
   // 64px chest art to the world; `bob` is a gentle idle float so it reads as collectible.
@@ -148,6 +183,8 @@ export const CONFIG = {
     blood: '#8b0000',
     muzzle: '#ffd27f',
     hudText: '#c8ccd4',
+    spitter: '#4faf5a', // P3.1 placeholder spitter blob (green)
+    acid: '#7fe08a',    // P3.1 acid projectile + splat (green)
   },
 
   placeholder: {
@@ -155,6 +192,8 @@ export const CONFIG = {
     ENEMY: { key: 'placeholder-enemy', width: 24, height: 32 },
     BULLET: { key: 'placeholder-bullet', width: 6, height: 4 },
     PICKUP: { key: 'placeholder-pickup', width: 28, height: 28 }, // green medic box fallback
+    SPITTER: { key: 'spitter', width: 40, height: 52 }, // P3.1 ranged-enemy blob (real art swaps in later)
+    ACID: { key: 'acid', width: 12, height: 12 },       // P3.1 acid glob
   },
 
   // Single map of entity type → texture key. This is the future art swap-point
@@ -165,6 +204,8 @@ export const CONFIG = {
     enemy: 'placeholder-enemy',
     bullet: 'placeholder-bullet',
     pickupHealth: 'pickup-chest', // real chest art (falls back to placeholder-pickup if unloaded)
+    spitter: 'spitter', // P3.1 placeholder blob — point at a real Spitter sheet when art is ready
+    acid: 'acid',       // P3.1 acid glob
   },
 
   // World / level (hand-authored platform layout) — coordinates doubled from the POC.
@@ -215,6 +256,9 @@ export const CONFIG = {
       { x: 3360, y: 524, type: 'Zombie_4' },
       { x: 3440, y: 524, type: 'Zombie_1' },
       { x: 3520, y: 524, type: 'Zombie_2' },
+      // P3.1 ranged Spitter — on the ground between the mid-crossing ledges (#3 x1360 / #4 x1616) so a
+      // player perched on x1360 (rise ~100px) sits inside firingRange and the spitter must lob acid up.
+      { x: 1500, y: 524, type: 'Spitter' },
     ],
   },
 

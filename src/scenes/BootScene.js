@@ -162,6 +162,32 @@ export class BootScene extends Scene {
     g.generateTexture('__HEALTH_CROSS', S, S);
     g.destroy();
 
+    // --- Spitter (P3.1): a green rounded blob at the SPITTER placeholder dims (real art swaps in later) ---
+    g = this.make.graphics({ x: 0, y: 0, add: false });
+    const sp = placeholder.SPITTER;
+    g.fillStyle(hexToInt(palette.spitter), 1);
+    g.fillRoundedRect(0, 0, sp.width, sp.height, 12);
+    g.fillStyle(0x0a0a0f, 1); // two dark "eyes" so it reads as a creature and shows facing-agnostic front
+    g.fillCircle(sp.width * 0.35, sp.height * 0.4, 3);
+    g.fillCircle(sp.width * 0.65, sp.height * 0.4, 3);
+    g.generateTexture(sp.key, sp.width, sp.height);
+    g.destroy();
+
+    // --- Acid glob (P3.1): a small green disc ---
+    g = this.make.graphics({ x: 0, y: 0, add: false });
+    const ac = placeholder.ACID;
+    g.fillStyle(hexToInt(palette.acid), 1);
+    g.fillCircle(ac.width / 2, ac.height / 2, ac.width / 2);
+    g.generateTexture(ac.key, ac.width, ac.height);
+    g.destroy();
+
+    // --- Acid splat particle (P3.1): small green square (matches the 8×8 particle scale) ---
+    g = this.make.graphics({ x: 0, y: 0, add: false });
+    g.fillStyle(hexToInt(palette.acid), 1);
+    g.fillRect(0, 0, 8, 8);
+    g.generateTexture('__PARTICLE_ACID', 8, 8);
+    g.destroy();
+
     console.log('[BootScene] Placeholder textures generated.');
   }
 

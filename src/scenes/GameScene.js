@@ -4,6 +4,7 @@ import { Player } from '../entities/Player.js';
 import { Bullet } from '../entities/Bullet.js';
 import { Enemy } from '../entities/Enemy.js';
 import { Pickup } from '../entities/Pickup.js';
+import { AcidProjectile } from '../entities/AcidProjectile.js';
 
 /**
  * GameScene — the main gameplay scene.
@@ -103,6 +104,25 @@ export class GameScene extends Scene {
       if (pickup) pickup.spawn(pos.x, pos.y, pos.type);
     }
     this.physics.add.overlap(this.player, this.pickups, this.onPickup, null, this);
+
+    // --- Acid projectiles (P3.1): pooled ballistic globs spat by ranged enemies ---
+    this.acid = this.physics.add.group({
+      classType: AcidProjectile,
+      maxSize: CONFIG.acid.poolSize,
+      runChildUpdate: true,
+    });
+    // Green splat burst (explode-only, like the blood/impact emitters)
+    this.acidSplatEmitter = this.add.particles(0, 0, '__PARTICLE_ACID', {
+      speed: { min: impact.speedMin, max: impact.speedMax },
+      angle: { min: 0, max: 360 },
+      scale: { start: 0.7, end: 0 },
+      lifespan: impact.lifespan,
+      emitting: false,
+    });
+    // Acid hits the player → damage + splat; hits the solid GROUND → splat (passes through one-way
+    // platforms via the acidGroundOnly filter, so it can arc over a ledge onto a perched player).
+    this.physics.add.overlap(this.player, this.acid, this.onAcidHitPlayer, null, this);
+    this.physics.add.collider(this.acid, this.terrain, this.onAcidHitGround, this.acidGroundOnly, this);
 
     // --- Atmosphere (L4) — gated behind the master switch. Off by default: the darkness overlay
     // hid the player/zombies too much to enjoy the level. When enabled it re-adds the full night
@@ -386,6 +406,58 @@ export class GameScene extends Scene {
 
     bullet.deactivate();
     enemy.takeDamage(CONFIG.weapon.damage);
+  }
+
+  /**
+   * Fire one arcing acid glob from a ranged enemy at the player's current position (P3.1).
+   * Solves a ballistic lob under CONFIG.acid.gravityY: pick a flight time T (scaled by horizontal
+   * distance, floored at minLobTime so a near-overhead shot can't blow up), then vx = dx/T and
+   * vy = (dy − ½gT²)/T lands the glob on the target. Because it arcs, a perched player is reachable.
+   */
+  spawnAcid(enemy, player) {
+    const g = CONFIG.acid.gravityY;
+    const mx = enemy.x;
+    const my = enemy.y - enemy.body.height * 0.6;          // muzzle at the spitter's upper body
+    const tx = player.x;
+    const ty = player.y - PLAYER_BODY.height * 0.5;         // aim at the player's torso
+    const dx = tx - mx;
+    const dy = ty - my;
+
+    const T = Math.max(CONFIG.acid.minLobTime, Math.abs(dx) / CONFIG.acid.speed);
+    const vx = dx / T;
+    const vy = (dy - 0.5 * g * T * T) / T;
+
+    const glob = this.acid.get(mx, my);
+    if (glob) glob.fire(mx, my, vx, vy);
+  }
+
+  /** Acid overlaps the player → damage, splat, retire the glob. */
+  onAcidHitPlayer(player, acid) {
+    if (!player.active || !acid.active || player.dead) return;
+    player.takeDamage(CONFIG.acid.damage, acid.x);
+    this.acidSplat(acid.x, acid.y);
+    acid.deactivate();
+  }
+
+  /** Acid collides with the ground → splat, retire the glob. */
+  onAcidHitGround(acid) {
+    if (!acid.active) return;
+    this.acidSplat(acid.x, acid.y);
+    acid.deactivate();
+  }
+
+  /**
+   * Collider process filter: acid only splats on the SOLID GROUND (rows ≥ groundRow), passing through
+   * one-way floating platforms — so a glob can arc over/around a ledge to reach a perched player
+   * instead of splatting on the platform's edge short of them.
+   */
+  acidGroundOnly(acid, tile) {
+    return tile.y >= this.groundRow;
+  }
+
+  /** Green acid splat burst at (x, y). */
+  acidSplat(x, y) {
+    this.acidSplatEmitter.explode(CONFIG.particles.impact.count, x, y);
   }
 }
 

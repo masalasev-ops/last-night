@@ -179,7 +179,7 @@ export class Player extends Physics.Arcade.Sprite {
     // --- Shooting (semi-auto: hold to fire at fire-rate cap) ---
     this.shootTimer = Math.max(0, this.shootTimer - dt);
 
-    if (pointer.isDown && this.shootTimer <= 0 && this.ammo > 0 && !this.reloading) {
+    if (pointer.isDown && this.shootTimer <= 0 && this.ammo > 0 && !this.reloading && this.aimingForward(pointer)) {
       this.shootTimer = 1 / weapon.fireRate;
       this.spawnBullet(); // aim geometry (from the gun tip) lives in spawnBullet
     }
@@ -213,6 +213,17 @@ export class Player extends Physics.Arcade.Sprite {
    * side (so it tracks the drawn gun); the aim vector is recomputed FROM the tip so
    * close-range shots point true. Fire-rate/ammo/reload gating stays in update().
    */
+  /**
+   * True when the cursor is on the side the character faces (or straight above/below it). Firing is
+   * gated on this so you can't shoot "backwards" toward the mouse while facing away — you must turn
+   * (press the movement key toward the target) to face it first. Facing stays keyboard-driven; the
+   * mouse only aims within the forward arc (up / down / diagonal on the facing side).
+   */
+  aimingForward(pointer) {
+    const facingDir = this.facingRight ? 1 : -1;
+    return (pointer.worldX - this.x) * facingDir >= 0;
+  }
+
   spawnBullet() {
     const pointer = this.scene.input.activePointer;
     const dir = this.facingRight ? 1 : -1;
