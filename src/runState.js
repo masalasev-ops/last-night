@@ -203,6 +203,26 @@ export const runState = {
     }
   },
 
+  /** Erase ALL persisted saves — every `lastnight.*` key (the current one + any stale/older-version keys,
+   * so nothing lingers across a schema bump) — and reset the in-memory run to a clean slate. Backs the
+   * Title's "Erase Save". Swallows storage errors (private mode / blocked). */
+  clearAllSaves() {
+    try {
+      const doomed = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && k.startsWith('lastnight.')) doomed.push(k);
+      }
+      doomed.forEach((k) => localStorage.removeItem(k));
+    } catch {
+      /* storage unavailable — nothing to clear */
+    }
+    this.levelIndex = 1;
+    this.phase = 'level';
+    this._checkpoint = null;
+    this.reset(); // re-seed salvage/unlocks/upgrades + rebuild the weapons table
+  },
+
   /** Take a level-start checkpoint: snapshot the current state to `_checkpoint` AND persist it. Called
    * by the transitions INTO a level (newGame / advanceLevel / load), never mid-level. */
   checkpoint() {

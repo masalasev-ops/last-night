@@ -44,8 +44,27 @@ export class TitleScene extends Scene {
 
     // New Game — always present.
     this.mkButton(width / 2, y, 'New Game', '#d6dae2', () => this.onNewGame());
+    y += 48;
+
+    // Erase Save — only when a save exists. A two-click confirm (onErase) guards against an accidental wipe.
+    if (runState.hasSave()) {
+      this._eraseBtn = this.mkButton(width / 2, y, 'Erase Save', '#a86a6a', () => this.onErase());
+      this.mkText(width / 2, y + 22, 'deletes your saved progress', 11, '#5a5a66').setOrigin(0.5);
+    }
 
     console.log('[TitleScene] ready');
+  }
+
+  /** Two-step erase: first click arms the confirm, second wipes ALL saves + re-renders the menu (the
+   * Continue + Erase buttons vanish, which is the visible proof it worked). */
+  onErase() {
+    if (!this._armed) {
+      this._armed = true;
+      this._eraseBtn.setText('Erase Save? — click again to confirm').setColor('#e5484d');
+      return;
+    }
+    runState.clearAllSaves();
+    this.scene.restart(); // re-render from a clean slate (no save → no Continue/Erase)
   }
 
   /** Load the saved run and route by phase; a failed load falls through to a fresh New Game. */

@@ -168,7 +168,12 @@ export const CONFIG = {
       // center-x 64; offsetX 45 centers the 38-wide body on the FRAME centre (45+19=64) so flipX never
       // shifts the hitbox. Arcade scales body+offset by artScale around the feet origin (as Spitter/Runner).
       body: { width: 38, height: 64, originX: 0.5, originY: 0.84, offsetX: 45, offsetY: 43, facesLeft: false },
-      maxHealth: 90, moveSpeed: 70, chaseSpeed: 110, touchDamage: 22, attackCooldown: 1.2,
+      // Threat pass (playtest): it was too easy to kite + out-DPS before it landed a blow. It still lumbers
+      // on patrol (moveSpeed 70) and stays slower than the player (walk 260 / sprint 416), but now COMMITS
+      // to a faster charge (chaseSpeed 165), reaches further with its long arms (attackRange 46 vs the shared
+      // 32), hits harder (26) and ~50% more often (attackCooldown 0.8), and soaks a little more (110 HP) —
+      // so a careless or cornered player pays. Dial any single value if it swings too far.
+      maxHealth: 110, moveSpeed: 70, chaseSpeed: 165, attackRange: 46, touchDamage: 26, attackCooldown: 0.8,
       salvageDrop: { min: 3, max: 5 },
     },
     // Flyer — the ONE new enemyProfile branch: ignores gravity, homes toward the player on both axes (can
@@ -358,11 +363,13 @@ export const CONFIG = {
       { x: 3360, y: 524, type: 'Zombie_4' },
       { x: 3440, y: 524, type: 'Zombie_1' },
       { x: 3520, y: 524, type: 'Zombie_2' },
-      // P3.4 mixed roster cluster (~x2050–2300, open ground before the x2500 zombie): a Tank flanked by
-      // two Runners — demonstrates the size/speed mix. (Flyer type stays defined in ENEMIES; it debuts
-      // in a later level, so it's not placed here.)
+      // P3.4 Tank — slow bullet-sponge guarding the medical supply (health chest at x3650): the player
+      // pushes through the 3-zombie cluster into the Tank, then the chest just past it is the reward/heal.
+      { x: 3600, y: 524, type: 'Tank' },
+      // P3.4 Runner pair (~x2050–2300, open ground before the x2500 zombie) — fast, fragile rushers.
+      // (Flyer stays defined in ENEMIES; it debuts in a later level. The Tank was moved downrange to
+      // guard the medical supply at x3650 — see the cluster above.)
       { x: 2060, y: 524, type: 'Runner' },
-      { x: 2180, y: 524, type: 'Tank' },
       { x: 2300, y: 524, type: 'Runner' },
       // P3.1 ranged Spitter — on the ground between the mid-crossing ledges (#3 x1360 / #4 x1616) so a
       // player perched on x1360 (rise ~100px) sits inside firingRange and the spitter must lob acid up.
