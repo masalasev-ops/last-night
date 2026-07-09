@@ -80,6 +80,10 @@ export class UIScene extends Scene {
    */
   showIntro() {
     const { intro, width, height, hud } = CONFIG;
+    // Per-level subtitle (P3.6): read the level the cursor points at, same resolution GameScene uses;
+    // fall back to the global intro.subtitle for any level that doesn't set one.
+    const level = CONFIG.LEVELS[runState.levelIndex] ?? CONFIG.LEVELS[1];
+    const subtitleText = level.subtitle ?? intro.subtitle;
     const mk = (y, size, text, color) =>
       this.add
         .text(width / 2, y, text, { fontFamily: hud.font.family, fontSize: size, color, align: 'center' })
@@ -87,7 +91,7 @@ export class UIScene extends Scene {
         .setStroke(hud.stroke.color, hud.stroke.thickness + 1)
         .setDepth(10);
     const title = mk(height / 2 - 24, 40, intro.title, '#e8e8e8');
-    const subtitle = mk(height / 2 + 20, 16, intro.subtitle, '#9aa0ac');
+    const subtitle = mk(height / 2 + 20, 16, subtitleText, '#9aa0ac');
 
     this.time.delayedCall(intro.holdMs, () => {
       this.tweens.add({

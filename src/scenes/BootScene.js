@@ -68,8 +68,10 @@ export class BootScene extends Scene {
     // Terrain tileset (image for now; L2 decides tilemap vs. manual tiling)
     this.load.image('tileset', ASSETS.tileset);
 
-    // Parallax background layers, keyed by index (far → near)
-    ASSETS.bgLayers.forEach(([path], i) => this.load.image(`bg-layer-${i}`, path));
+    // Parallax background layers — biome-scoped keys (P3.6). Both biomes preload up front; each level
+    // picks its set by naming the keys in LEVELS[n].bgLayers, so GameScene.buildParallax stays biome-agnostic.
+    ASSETS.bgLayers.forEach(([path], i) => this.load.image(`bg-forest-${i}`, path));
+    ASSETS.ruinsBgLayers.forEach(([path], i) => this.load.image(`bg-ruins-${i}`, path));
   }
 
   create() {

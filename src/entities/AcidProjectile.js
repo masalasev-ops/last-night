@@ -47,7 +47,7 @@ export class AcidProjectile extends Physics.Arcade.Sprite {
     super.preUpdate(time, delta);
 
     this.age += delta / 1000;
-    const { worldWidth, worldHeight } = CONFIG.LEVEL;
+    const { worldWidth, worldHeight } = this.scene.level; // resolved level bounds (P3.6)
     if (this.age >= CONFIG.acid.lifespan || this.x < 0 || this.x > worldWidth || this.y > worldHeight) {
       this.scene.acidSplat(this.x, this.y);
       this.deactivate();

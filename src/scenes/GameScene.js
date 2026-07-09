@@ -1,5 +1,5 @@
 import { Scene, Input, BlendModes } from 'phaser';
-import { CONFIG, ASSETS, PLAYER_BODY } from '../config.js';
+import { CONFIG, PLAYER_BODY } from '../config.js';
 import { runState } from '../runState.js';
 import { Player } from '../entities/Player.js';
 import { Bullet } from '../entities/Bullet.js';
@@ -19,15 +19,25 @@ export class GameScene extends Scene {
   }
 
   create() {
-    const { LEVEL, endMarker, palette } = CONFIG;
+    const { endMarker, palette } = CONFIG;
 
-    // Parallax forest background — 4 camera-pinned layers scrolling at different rates
+    // P3.6: resolve WHICH level to load from the P3.5 cursor — the single wiring that makes levelIndex real.
+    // Everything downstream (bounds, terrain, parallax, spawn, endMarker, pickups, update's win check) reads
+    // this resolved `this.level`, never CONFIG.LEVEL. Fallback to Level 1 for a stale/out-of-range cursor.
+    const LEVEL = CONFIG.LEVELS[runState.levelIndex] ?? CONFIG.LEVELS[1];
+    this.level = LEVEL;
+
+    // Zone-triggered spawns (P3.6): enemies spawn as the player crosses each zone's triggerX, not all at
+    // create(). Tracks which zones have fired (by zone-object identity) so re-crossing never re-spawns.
+    this.firedZones = new Set();
+
+    // Parallax background — the resolved biome's layers (variable count) scrolling at different rates
     this.buildParallax();
 
     // World bounds (physics + camera clamping)
     this.physics.world.setBounds(0, 0, LEVEL.worldWidth, LEVEL.worldHeight);
 
-    // Forest terrain — real tileset ground + one-way platforms (sets this.terrain, this.groundRow)
+    // Terrain — real tileset ground + one-way platforms (sets this.terrain, this.groundRow)
     this.buildTerrain();
 
     // End marker — tall bright rectangle on the far right (visual; win trigger uses endMarkerX)
@@ -49,21 +59,15 @@ export class GameScene extends Scene {
     // --- Collisions (one-way platforms via process callback; ground fully solid) ---
     this.physics.add.collider(this.player, this.terrain, null, this.terrainProcess, this);
 
-    // --- Enemy pool (created after Player so spawn loop can set enemy.player) ---
+    // --- Enemy pool (created after Player so spawned enemies can set enemy.player) ---
     this.enemies = this.physics.add.group({
       classType: Enemy,
       maxSize: CONFIG.enemy.enemyPoolSize,
       runChildUpdate: true, // calls preUpdate on active enemies each frame
     });
 
-    // Spawn each enemy from level config (each entry chooses a Zombie_N type)
-    for (const pos of LEVEL.enemies) {
-      const enemy = this.enemies.get(pos.x, pos.y);
-      if (enemy) {
-        enemy.spawn(pos.x, pos.y, pos.type);
-        enemy.player = this.player; // AI targeting reference
-      }
-    }
+    // P3.6: enemies are NOT spawned up front — the update() zone spawner fires each LEVEL.zones entry once as
+    // the player crosses its triggerX (see spawnZone). A zone with triggerX 0 still spawns at level start.
 
     // Enemy collisions & overlaps
     this.physics.add.collider(this.enemies, this.terrain, null, this.terrainProcess, this);
@@ -132,7 +136,12 @@ export class GameScene extends Scene {
     // hid the player/zombies too much to enjoy the level. When enabled it re-adds the full night
     // mode (vignette + optional night grade + darkness/flashlight overlay + fog). ---
     this.darkness = null; // set below only when atmosphere is enabled; update() guards on it
-    if (CONFIG.atmosphere.enabled) {
+    // P3.6: atmosphere (night tint + vignette + darkness/flashlight overlay + fog) is PER-LEVEL. The forest
+    // is a night scene (flashlight); the ruins are a bright DAYLIGHT scene — L2 sets `atmosphere: false`, so
+    // the whole night stack is skipped and its daytime background shows unlit. Levels that omit the flag fall
+    // back to the global master switch (so the forest is unchanged).
+    const atmosphereOn = this.level.atmosphere ?? CONFIG.atmosphere.enabled;
+    if (atmosphereOn) {
       const cam = this.cameras.main;
       const v = CONFIG.vignette;
       if (v.enabled) cam.filters.external.addVignette(v.x, v.y, v.radius, v.strength, v.color);
@@ -215,8 +224,8 @@ export class GameScene extends Scene {
       return; // fix: no further access to torn-down scene objects
     }
 
-    // Win condition: player reached the end marker
-    if (!this.player.dead && !this.player.won && this.player.x >= CONFIG.LEVEL.endMarkerX) {
+    // Win condition: player reached the end marker (of the resolved level, P3.6)
+    if (!this.player.dead && !this.player.won && this.player.x >= this.level.endMarkerX) {
       this.player.won = true;
       this.player.body.setVelocity(0, 0);
     }
@@ -231,6 +240,9 @@ export class GameScene extends Scene {
       this.scene.start('Shop');
       return; // GameScene is shutting down — don't touch its objects below
     }
+
+    // Zone-triggered spawns (P3.6): fire any zone the player has reached this frame (once each).
+    this.updateZoneSpawns();
 
     // Darkness overlay: erase the player glow + gun flashlight cone this frame (only when the
     // night atmosphere is enabled — otherwise there's no overlay to redraw)
@@ -310,17 +322,49 @@ export class GameScene extends Scene {
   }
 
   /**
-   * Build the 4-layer parallax background. Each layer is a camera-pinned tileSprite
-   * (scrollFactor 0), bottom-aligned to the view; its texture scrolls in update() at the
-   * layer's parallax factor (far/Sky ~0.10 barely moves, near/Flora1 ~0.70 moves most).
+   * Zone-triggered spawn system (P3.6). Each frame, fire any of the resolved level's zones the player has
+   * reached (triggerX <= player.x) and not yet fired — tracked by zone-object identity in `firedZones`, so
+   * crossing back and forth never re-spawns. A zone with triggerX 0 spawns at level start.
+   */
+  updateZoneSpawns() {
+    const zones = this.level.zones ?? [];
+    for (const zone of zones) {
+      if (this.firedZones.has(zone) || this.player.x < zone.triggerX) continue;
+      this.firedZones.add(zone);
+      this.spawnZone(zone);
+    }
+  }
+
+  /** Spawn one zone's enemies from the shared pool (same path the old create() spawn loop used). */
+  spawnZone(zone) {
+    for (const e of zone.enemies) {
+      const enemy = this.enemies.get(e.x, e.y);
+      if (enemy) {
+        enemy.spawn(e.x, e.y, e.type);
+        enemy.player = this.player; // AI targeting reference
+      }
+    }
+  }
+
+  /**
+   * Build the biome parallax background (P3.6: variable layer count — forest 4, ruins 3). Each layer is a
+   * camera-pinned tileSprite (scrollFactor 0), bottom-aligned to the view; its texture scrolls in update()
+   * at the layer's parallax factor (far ~0.10–0.15 barely moves, near ~0.60–0.70 moves most).
    */
   buildParallax() {
-    this.bgLayers = ASSETS.bgLayers.map(([, factor], i) => {
+    // P3.6: iterate the RESOLVED level's bgLayers — variable count (forest 4, ruins 3), each `[key, factor]`.
+    // Biomes ship at different source heights (ruins 324px vs forest 544), so scale each layer's texture so
+    // its source height fills the 544 display box: forest → 1.0 (byte-identical to before), ruins → ~1.68
+    // (fills vertically instead of tiling the horizon). Texture still scrolls via tilePositionX in update().
+    const DISPLAY_H = 544;
+    this.bgLayers = this.level.bgLayers.map(([key, factor], i) => {
+      const srcH = this.textures.get(key).getSourceImage().height || DISPLAY_H;
       const ts = this.add
-        .tileSprite(0, CONFIG.height, CONFIG.width, 544, `bg-layer-${i}`)
+        .tileSprite(0, CONFIG.height, CONFIG.width, DISPLAY_H, key)
         .setOrigin(0, 1)          // bottom-left anchor at the view's bottom
         .setScrollFactor(0)       // pinned to the camera; we scroll the texture instead
         .setDepth(-10 + i);       // behind the world, far → near
+      ts.tileScaleX = ts.tileScaleY = DISPLAY_H / srcH;
       return { ts, factor };
     });
   }
@@ -333,7 +377,8 @@ export class GameScene extends Scene {
    * leaving spawn/enemy/end-marker data untouched. Sets this.terrain and this.groundRow.
    */
   buildTerrain() {
-    const { LEVEL, TILES } = CONFIG;
+    const { TILES } = CONFIG;
+    const LEVEL = this.level; // resolved level (P3.6)
     const T = TILES.size;
     const cols = Math.ceil(LEVEL.worldWidth / T);
     const rows = Math.ceil((LEVEL.worldHeight + T * 3) / T);
@@ -341,7 +386,7 @@ export class GameScene extends Scene {
     const layerY = LEVEL.groundY - this.groundRow * T; // shift grid so surface == groundY (524)
 
     const map = this.make.tilemap({ tileWidth: T, tileHeight: T, width: cols, height: rows });
-    const tileset = map.addTilesetImage('tiles', 'tileset', T, T);
+    const tileset = map.addTilesetImage('tiles', LEVEL.tileset, T, T); // biome tileset key (P3.6)
     const layer = map.createBlankLayer('terrain', tileset, 0, layerY, cols, rows, T, T);
     this.terrain = layer;
 
@@ -366,6 +411,10 @@ export class GameScene extends Scene {
     }
 
     layer.setCollision(TILES.solid); // mark solids collidable; terrainProcess refines to one-way
+
+    // P3.6: optional biome mood tint on the reused tileset (ruins → dead-ground). Reads as tinted forest,
+    // not stone — a stand-in until real ruins ground tiles drop in on this same `tileset` key.
+    if (LEVEL.tilesetTint != null) layer.setTint(LEVEL.tilesetTint);
   }
 
   /**

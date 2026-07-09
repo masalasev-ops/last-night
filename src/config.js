@@ -151,10 +151,13 @@ export const CONFIG = {
       enemyProfile: 'melee',
       artScale: 0.70,   // → ~64px, ≈ a standard zombie; the lean bloodied silhouette + speed read distinct
       // Explicit torso body (required now that `sheet` is gone — no ZOMBIE_BODY['Runner'] to fall back to).
-      // Measured from Idle.png: feet row ~112 (originY 0.87), character center-x 66; offsetX 52 centers the
-      // 24-wide body on the FRAME centre (52+12=64) so flipX never shifts the hitbox. Arcade scales
-      // body+offset by artScale around the feet origin on the next step (as Spitter/Tank do).
-      body: { width: 24, height: 52, originX: 0.5, originY: 0.87, offsetX: 52, offsetY: 59, facesLeft: false },
+      // Height covers the FULL visible silhouette (head→feet), not just the lower torso: at artScale 0.70 it
+      // scales to ~62px spanning [462..524] — the same span as a standard zombie, so its top sits on the
+      // player's gun line (feet + muzzleOffset.y). The earlier 52-tall body only reached [488..524], 26px
+      // BELOW the gun line, so point-blank/close rifle shots sailed over the short Runner's head (the "bullets
+      // don't hit the Runner when touching" bug). offsetX 52 centers the 24-wide body on the frame centre so
+      // flipX never shifts the hitbox. Arcade scales body+offset by artScale around the feet origin next step.
+      body: { width: 24, height: 89, originX: 0.5, originY: 0.87, offsetX: 52, offsetY: 22, facesLeft: false },
       maxHealth: 15, moveSpeed: 180, chaseSpeed: 360, touchDamage: 8, attackCooldown: 0.6,
       salvageDrop: { min: 1, max: 2 },
     },
@@ -318,63 +321,111 @@ export const CONFIG = {
   // World / level (hand-authored platform layout) — coordinates doubled from the POC.
   // This placeholder level is replaced by the tileset forest in L2; it stays proportional
   // here so L1 can validate jump/shoot feel at 2× scale.
-  LEVEL: {
-    worldWidth: 6400,
-    worldHeight: 540,
-    groundY: 524, // top of the ground surface (16px thick below this)
-    spawn: { x: 160, y: 504 }, // player start; y = groundY − 20 so feet drop onto the ground
-    platforms: [
-      // { x, y, width, height } — x/y are center-x, top-y.
-      // Chained platforms: edge gap designed so walking jumps clear ascending,
-      // sprinting clears comfortably.
-      // Warm-up: ground → low → higher
-      { x: 560, y: 444, width: 128, height: 16 },   // from ground
-      { x: 816, y: 380, width: 128, height: 16 },   // from #1  (edge gap 128px)
-      // Mid-level crossing
-      { x: 1360, y: 424, width: 96, height: 16 },   // from ground
-      { x: 1616, y: 356, width: 144, height: 16 },  // from #3  (edge gap 136px)
-      { x: 1976, y: 428, width: 112, height: 16 },  // from ground (L2: lowered 1 tile → 96px rise, comfortably reachable)
-      // Staggered climb — three-step ascent to the peak
-      { x: 2760, y: 440, width: 112, height: 16 },  // from ground
-      { x: 3008, y: 370, width: 128, height: 16 },  // from #6  (edge gap 128px)
-      { x: 3280, y: 300, width: 144, height: 16 },  // from #7  (edge gap 136px) — peak
-      { x: 3800, y: 428, width: 112, height: 16 },  // from ground (L2: lowered 1 tile → 96px rise, comfortably reachable)
-      // Final stretch
-      { x: 4560, y: 428, width: 128, height: 16 },  // from ground
-      { x: 4808, y: 360, width: 128, height: 16 },  // from #10 (edge gap 120px)
-      { x: 5080, y: 428, width: 112, height: 16 },  // from ground (L2: lowered 1 tile → 96px rise, comfortably reachable)
-      { x: 5880, y: 440, width: 160, height: 16 },  // from ground — home stretch
-    ],
-    endMarkerX: 6300,
-    // Health pickups (L5). x, feet-y (y = groundY so the chest rests on the ground). Placed just past
-    // the 3-zombie cluster / staggered climb (x≈3360–3520) where a hurt player arrives. Reachability
-    // + natural-arrival confirmed in the human playtest (§H); relocate here if the level re-tune moved it.
-    pickups: [
-      { x: 3650, y: 524, type: 'health' },
-    ],
-    // Enemy spawns (x, feet-y). y = groundY (524) so feet rest on the ground. Each picks a
-    // Zombie_N sheet; the mix covers all four types.
-    enemies: [
-      // Solo enemies
-      { x: 1100, y: 524, type: 'Zombie_1' },
-      { x: 2500, y: 524, type: 'Zombie_2' },
-      { x: 4700, y: 524, type: 'Zombie_3' },
-      // Spawn cluster (3 grouped near the staggered climb) — includes Zombie_4
-      { x: 3360, y: 524, type: 'Zombie_4' },
-      { x: 3440, y: 524, type: 'Zombie_1' },
-      { x: 3520, y: 524, type: 'Zombie_2' },
-      // P3.4 Tank — slow bullet-sponge guarding the medical supply (health chest at x3650): the player
-      // pushes through the 3-zombie cluster into the Tank, then the chest just past it is the reward/heal.
-      { x: 3600, y: 524, type: 'Tank' },
-      // P3.4 Runner pair (~x2050–2300, open ground before the x2500 zombie) — fast, fragile rushers.
-      // (Flyer stays defined in ENEMIES; it debuts in a later level. The Tank was moved downrange to
-      // guard the medical supply at x3650 — see the cluster above.)
-      { x: 2060, y: 524, type: 'Runner' },
-      { x: 2300, y: 524, type: 'Runner' },
-      // P3.1 ranged Spitter — on the ground between the mid-crossing ledges (#3 x1360 / #4 x1616) so a
-      // player perched on x1360 (rise ~100px) sits inside firingRange and the spitter must lob acid up.
-      { x: 1500, y: 524, type: 'Spitter' },
-    ],
+  // Levels are a DATA TABLE keyed by runState.levelIndex (P3.6). GameScene resolves
+  // `CONFIG.LEVELS[levelIndex] ?? CONFIG.LEVELS[1]` once in create() and reads that everywhere. Each level
+  // carries its own geometry + a small biome bundle (bgLayers keys + parallax factors, tileset key, optional
+  // tilesetTint) + zone-triggered spawns + a nextLevelId cursor. Adding Level 3 is a new row, not engine code.
+  LEVELS: {
+    // ---- Level 1 — forest (the original slice level; regression-safe) ----
+    1: {
+      biome: 'forest',
+      subtitle: 'Reach the far side of the forest', // shown on the L5 intro card (per-level, P3.6)
+      worldWidth: 6400,
+      worldHeight: 540,
+      groundY: 524, // top of the ground surface (16px thick below this)
+      spawn: { x: 160, y: 504 }, // player start; y = groundY − 20 so feet drop onto the ground
+      // Biome art: 4 forest parallax layers (key, far→near parallax factor) + the shared terrain tileset.
+      bgLayers: [['bg-forest-0', 0.10], ['bg-forest-1', 0.25], ['bg-forest-2', 0.45], ['bg-forest-3', 0.70]],
+      tileset: 'tileset',
+      nextLevelId: 2,
+      platforms: [
+        // { x, y, width, height } — x/y are center-x, top-y.
+        // Chained platforms: edge gap designed so walking jumps clear ascending,
+        // sprinting clears comfortably.
+        // Warm-up: ground → low → higher
+        { x: 560, y: 444, width: 128, height: 16 },   // from ground
+        { x: 816, y: 380, width: 128, height: 16 },   // from #1  (edge gap 128px)
+        // Mid-level crossing
+        { x: 1360, y: 424, width: 96, height: 16 },   // from ground
+        { x: 1616, y: 356, width: 144, height: 16 },  // from #3  (edge gap 136px)
+        { x: 1976, y: 428, width: 112, height: 16 },  // from ground (L2: lowered 1 tile → 96px rise, comfortably reachable)
+        // Staggered climb — three-step ascent to the peak
+        { x: 2760, y: 440, width: 112, height: 16 },  // from ground
+        { x: 3008, y: 370, width: 128, height: 16 },  // from #6  (edge gap 128px)
+        { x: 3280, y: 300, width: 144, height: 16 },  // from #7  (edge gap 136px) — peak
+        { x: 3800, y: 428, width: 112, height: 16 },  // from ground (L2: lowered 1 tile → 96px rise, comfortably reachable)
+        // Final stretch
+        { x: 4560, y: 428, width: 128, height: 16 },  // from ground
+        { x: 4808, y: 360, width: 128, height: 16 },  // from #10 (edge gap 120px)
+        { x: 5080, y: 428, width: 112, height: 16 },  // from ground (L2: lowered 1 tile → 96px rise, comfortably reachable)
+        { x: 5880, y: 440, width: 160, height: 16 },  // from ground — home stretch
+      ],
+      endMarkerX: 6300,
+      // Health pickups (L5). x, feet-y (y = groundY so the chest rests on the ground). Placed just past
+      // the 3-zombie cluster / staggered climb (x≈3360–3520) where a hurt player arrives.
+      pickups: [
+        { x: 3650, y: 524, type: 'health' },
+      ],
+      // P3.6: the original L1 roster re-expressed as zone-triggered spawns. triggerX is chosen so each group
+      // still spawns OFF-SCREEN just before the player arrives — same types/positions ⇒ plays as it did when
+      // everything spawned at create(). (triggerX 0 = spawn at level start, like the old behavior.)
+      zones: [
+        // Opening + mid-crossing: a lone zombie, then the Spitter that lobs acid at a player on the x1360 ledge.
+        { triggerX: 0, enemies: [{ x: 1100, y: 524, type: 'Zombie_1' }, { x: 1500, y: 524, type: 'Spitter' }] },
+        // Runner pair on open ground (~x2050–2300) into a solo zombie — fast fragile rushers.
+        { triggerX: 1300, enemies: [{ x: 2060, y: 524, type: 'Runner' }, { x: 2300, y: 524, type: 'Runner' }, { x: 2500, y: 524, type: 'Zombie_2' }] },
+        // Staggered-climb cluster + the Tank guarding the medical supply (chest at x3650).
+        { triggerX: 2600, enemies: [{ x: 3360, y: 524, type: 'Zombie_4' }, { x: 3440, y: 524, type: 'Zombie_1' }, { x: 3520, y: 524, type: 'Zombie_2' }, { x: 3600, y: 524, type: 'Tank' }] },
+        // Final-stretch straggler.
+        { triggerX: 3900, enemies: [{ x: 4700, y: 524, type: 'Zombie_3' }] },
+      ],
+    },
+
+    // ---- Level 2 — apocalyptic ruins (P3.6: a genuinely new, shorter, more vertical map) ----
+    2: {
+      biome: 'ruins',
+      subtitle: 'Cross the ruins by daylight',
+      atmosphere: false, // DAYLIGHT scene — the ruins background is a bright day, so skip the whole night
+                         // stack (no flashlight/darkness/vignette/fog). Forest (L1) omits this → stays night.
+      worldWidth: 5200,
+      worldHeight: 540,
+      groundY: 524,
+      spawn: { x: 160, y: 504 },
+      // Ruins parallax (3 layers, far→near) over the REUSED terrain tileset, tinted for a dead-ground mood
+      // (reads as tinted forest, not stone — real ruins ground tiles drop in later on the same `tileset` key).
+      bgLayers: [['bg-ruins-0', 0.15], ['bg-ruins-1', 0.35], ['bg-ruins-2', 0.60]],
+      tileset: 'tileset',
+      tilesetTint: 0x9b8f78,
+      nextLevelId: null, // end of Chapter 1 content → the "to be continued" placeholder (P3.7 boss plugs in here)
+      // Distinct layout: rubble steps → a quiet gap → a ruined-tower climb (Spitter perch) → peak → climax perches.
+      platforms: [
+        { x: 480,  y: 452, width: 96,  height: 16 },  // opening rubble step
+        { x: 760,  y: 396, width: 96,  height: 16 },  // opening rubble step 2
+        { x: 1750, y: 404, width: 96,  height: 16 },  // lull: a lone pillar over the dip
+        { x: 2500, y: 440, width: 112, height: 16 },  // build: climb 1
+        { x: 2720, y: 372, width: 112, height: 16 },  // build: climb 2
+        { x: 2900, y: 392, width: 128, height: 16 },  // Spitter perch (Z2) — lobs down at the player on the ground
+        { x: 3300, y: 300, width: 128, height: 16 },  // ruined-tower peak (traversal high point)
+        { x: 3760, y: 432, width: 120, height: 16 },  // descent into the climax arena
+        { x: 4080, y: 372, width: 96,  height: 16 },  // climax perch over the gap the Flyer patrols
+        { x: 4600, y: 430, width: 140, height: 16 },  // home-stretch ledge
+      ],
+      endMarkerX: 5100,
+      // Two chests — one in the pre-build lull, one in the pre-climax breather (different spots than L1).
+      pickups: [
+        { x: 1900, y: 524, type: 'health' },
+        { x: 3400, y: 524, type: 'health' },
+      ],
+      // Paced zones: opening skirmish → LULL → build (rushers + a perched Spitter) → LULL → climax (Tank + Flyer + zombie).
+      zones: [
+        // Z1 — opening skirmish (spawns at start, off-screen): two shamblers.
+        { triggerX: 0, enemies: [{ x: 900, y: 524, type: 'Zombie_1' }, { x: 1150, y: 524, type: 'Zombie_2' }] },
+        // Z2 — build: a Runner pair rushes as a Spitter lobs from the ruined-tower ledge (y392 perch above).
+        { triggerX: 2050, enemies: [{ x: 2500, y: 524, type: 'Runner' }, { x: 2700, y: 524, type: 'Runner' }, { x: 2900, y: 392, type: 'Spitter' }] },
+        // Z3 — climax: a Tank anchors while a Flyer harasses over the gap and a Zombie_4 flanks.
+        { triggerX: 3550, enemies: [{ x: 4000, y: 524, type: 'Tank' }, { x: 3900, y: 360, type: 'Flyer' }, { x: 4200, y: 524, type: 'Zombie_4' }] },
+      ],
+    },
   },
 
   ground: {
@@ -466,12 +517,20 @@ export const ASSETS = {
     chest: { path: 'assets/platformer-game-tileset-pixel-art/PNG/chest.png', frame: 64, frames: 6, fps: 8 },
   },
   tileset: 'assets/platformer-game-tileset-pixel-art/PNG/Tileset.png',
+  // Forest parallax layers, preloaded as `bg-forest-${i}` (far → near). P3.6: the parallax FACTORS here are
+  // now vestigial — BootScene only reads the path (index 0); each level owns its factors in LEVELS[n].bgLayers.
   bgLayers: [
-    // [path, parallax scrollFactor] — far → near
     ['assets/platformer-game-tileset-pixel-art/PNG/Background/x32/Skyx32.png',     0.10],
     ['assets/platformer-game-tileset-pixel-art/PNG/Background/x32/Clouds_x32.png', 0.25],
     ['assets/platformer-game-tileset-pixel-art/PNG/Background/x32/Flora2x32.png',  0.45],
     ['assets/platformer-game-tileset-pixel-art/PNG/Background/x32/Flora1x32.png',  0.70],
+  ],
+  // P3.6: ruins parallax layers (post-apocalypse pack, "background 1" — 3 layers, far → near), preloaded as
+  // `bg-ruins-${i}`. Factors live per-level in LEVELS[2].bgLayers, so only the paths matter here.
+  ruinsBgLayers: [
+    ['assets/free-post-apocalypse-pixel-art-backgrounds-for-game-projects/background 1/1.png'],
+    ['assets/free-post-apocalypse-pixel-art-backgrounds-for-game-projects/background 1/2.png'],
+    ['assets/free-post-apocalypse-pixel-art-backgrounds-for-game-projects/background 1/3.png'],
   ],
 };
 

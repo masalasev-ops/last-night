@@ -78,8 +78,8 @@ export class Bullet extends Physics.Arcade.Sprite {
       return;
     }
 
-    // Safety net — deactivate if it somehow leaves the world bounds
-    const { worldWidth, worldHeight } = CONFIG.LEVEL;
+    // Safety net — deactivate if it somehow leaves the world bounds (of the resolved level, P3.6)
+    const { worldWidth, worldHeight } = this.scene.level;
     if (this.x < 0 || this.x > worldWidth || this.y < 0 || this.y > worldHeight) {
       this.deactivate();
     }

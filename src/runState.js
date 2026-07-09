@@ -245,10 +245,11 @@ export const runState = {
     this.checkpoint();
   },
 
-  /** Advance to the next level (shop Continue): bump the cursor, back to 'level' phase, checkpoint
-   * (this becomes the new level-start death-revert target). */
+  /** Advance to the next level (shop Continue): follow the current level's `nextLevelId` cursor (P3.6),
+   * back to 'level' phase, checkpoint (this becomes the new level-start death-revert target). A `null`
+   * nextLevelId leaves the cursor put — the caller (ShopScene) routes to the end placeholder instead. */
   advanceLevel() {
-    this.levelIndex += 1;
+    this.levelIndex = CONFIG.LEVELS[this.levelIndex]?.nextLevelId ?? this.levelIndex;
     this.phase = 'level';
     this.checkpoint();
   },

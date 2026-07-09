@@ -6,6 +6,7 @@ import { TitleScene } from './scenes/TitleScene.js';
 import { GameScene } from './scenes/GameScene.js';
 import { UIScene } from './scenes/UIScene.js';
 import { ShopScene } from './scenes/ShopScene.js';
+import { EndScene } from './scenes/EndScene.js';
 
 const config = {
   type: AUTO,
@@ -25,7 +26,7 @@ const config = {
       debug: false,
     },
   },
-  scene: [BootScene, TitleScene, GameScene, UIScene, ShopScene],
+  scene: [BootScene, TitleScene, GameScene, UIScene, ShopScene, EndScene],
 };
 
 const StartGame = (parent) => {

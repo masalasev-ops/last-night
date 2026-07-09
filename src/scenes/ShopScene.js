@@ -78,13 +78,19 @@ export class ShopScene extends Scene {
       y += 30;
     }
 
-    // --- Continue → next level ---
-    // advanceLevel() (P3.5) bumps levelIndex, flips phase back to 'level', and checkpoints (this becomes
-    // the next level's death-revert target + on-disk save). Stub still loads Level 1 until P3.6.
-    const cont = this.mkText(CONFIG.width / 2, CONFIG.height - 44, '[ CONTINUE → ]', 22, '#3ad06a').setOrigin(0.5);
+    // --- Continue → next level (or the end placeholder) ---
+    // P3.6: route by the cleared level's nextLevelId. null → last level of Chapter 1 → the "to be continued"
+    // End screen (the seam P3.7's boss replaces). Otherwise advanceLevel() moves the cursor to nextLevelId,
+    // flips phase to 'level', and checkpoints (the next level's death-revert target + on-disk save), then Game.
+    const isEnd = (CONFIG.LEVELS[runState.levelIndex]?.nextLevelId ?? null) === null;
+    const cont = this.mkText(CONFIG.width / 2, CONFIG.height - 44, isEnd ? '[ FINISH CHAPTER → ]' : '[ CONTINUE → ]', 22, '#3ad06a').setOrigin(0.5);
     cont.setInteractive({ useHandCursor: true }).on('pointerdown', () => {
-      runState.advanceLevel();
-      this.scene.start('Game');
+      if (isEnd) {
+        this.scene.start('End');
+      } else {
+        runState.advanceLevel();
+        this.scene.start('Game');
+      }
     });
     this.rows.push(cont);
   }

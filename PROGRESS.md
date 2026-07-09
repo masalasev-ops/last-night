@@ -43,6 +43,7 @@ Source of truth: `docs/PHASE3_PLAN.md` + per-milestone specs (e.g. `docs/P3.1_RA
 | **P3.3 — Salvage, end-of-level shop & upgrades** | The combat loop **kill → salvage → shop → stronger**. New **`RunState`** module (in-memory singleton, survives scene transitions) owns run-scoped `salvage`/`unlockedWeapons`/`ownedUpgrades` + a **runtime weapons table** (a `structuredClone` of the `CONFIG.WEAPONS` template that upgrades modify). `Player.get weapon()` reads `runState.weapons[id]`, so via the P3.2 seam an upgrade reaches the bullet with **zero engine change**. Enemies drop salvage on the kill (auto-collected, floating `+N`, HUD counter); a new **`ShopScene`** spends it on **weapon unlocks** (start rifle-only; shotgun/SMG earned) and **data-driven `UPGRADES`** (add/mult on damage/reload/mag/fireRate, tiered via `prereq`), applied by **`recompute()`** (adds-before-mults, rebuilt from template). Win → shop → next level; `RunState` persists across the transition. | ✅ Done |
 | **P3.4 — Enemy roster (Runner / Tank / Flyer)** | Generalized `Enemy.preUpdate` stat resolution to `this.def.<stat> ?? CONFIG.enemy.<stat>` for **every** shared stat (was ranged-only) + a `sheet`→`animKey` override in `spawn()`. That makes **Runner** (fast/fragile) and **Tank** (slow/tanky/big) **pure `ENEMIES` data rows on the melee FSM — zero new code** (they shipped as tinted, rescaled zombie sheets). **Flyer** is the one new `enemyProfile:'flyer'` branch: gravity-off, homes in 2D, reaches a perched player, damages on contact (placeholder blob). Melee zombies unchanged (inherit defaults). Shipped on placeholders; **real Tank art (PixelLab, own sheet) + a threat-tune have since landed** via the swap-point — Runner + Flyer stay placeholders (see post-P3.4 note). | ✅ Done |
 | **P3.5 — Save / Continue (level-boundary checkpoints)** | Persisted the in-memory `RunState` to **versioned localStorage** (`lastnight.save.v1`, `SCHEMA_VERSION`) so a run survives a browser reload, plus a `levelIndex`/`phase` cursor. **The only checkpoint is a level boundary**: clearing a level banks salvage + saves (`phase:'shop'`); **dying reverts to the in-memory level-start `_checkpoint`** (attempt's salvage discarded, unlocks/upgrades intact) and replays the level — **no save written on death**. Two synced concerns: **`_checkpoint`** (death-revert, works even if storage is blocked) vs **on-disk save** (cross-session Continue). Load = **set fields + `recompute()`** (weapons table never serialized; `ownedUpgrades` rehydrated as a `Set`) — the P3.2/P3.3 seam pays off again. New **`TitleScene`** (text; the confirmed entry point, not auto-Continue): **Continue** shows only when `hasSave()`, its label named from `peekSave()` (`Level N` / `Shop (Level N cleared)`); **New Game** wipes + resets + starts L1. All `localStorage` access `try/catch`ed — corrupt/wrong-version/blocked all degrade to "no save", never a crash. *(Later add: an **Erase Save** Title item — `clearAllSaves()` wipes every `lastnight.*` key behind a two-click confirm.)* | ✅ Done |
+| **P3.6 — Level system + Level 2 (ruins biome)** | Turned the single hardcoded `CONFIG.LEVEL` into a **`CONFIG.LEVELS` table keyed by `levelIndex`**; `GameScene.create()` resolves `CONFIG.LEVELS[runState.levelIndex] ?? LEVELS[1]` **once** into `this.level` and everything downstream (bounds, terrain, parallax, spawn, endMarker, pickups, `update()`'s win check) reads it — the wiring that finally **consumes the P3.5 cursor**. Each level carries a **biome bundle** (`bgLayers` keys+factors, `tileset` key, optional `tilesetTint`) + a `nextLevelId` cursor; `buildParallax()` handles a **variable layer count** (forest 4, ruins 3) and per-layer `tileScale`. Enemies now spawn via a **zone-triggered system** (`LEVEL.zones = [{triggerX, enemies}]`, fired once each as the player advances, tracked in `firedZones`) instead of all at `create()` — pacing is **authored** (tension→lull→tougher), not coded. **Level 2** is a genuinely new, shorter, more-vertical **apocalyptic-ruins** map (its own layout/worldWidth/endMarker/pickups + a tinted reused tileset under the post-apocalypse parallax), with the **Flyer debuting** in its climax. `advanceLevel()` follows `nextLevelId`; L2's `null` routes the shop Continue to a new **`EndScene`** ("Chapter 1 — to be continued") — the seam P3.7's boss plugs into. L1 re-expressed as zones plays as before. | ✅ Done |
 
 ### P3.1 notes / follow-ups
 - **AI-art pipeline** established (see CLAUDE.md → Assets): raw PixelLab frames git-ignored under
@@ -172,3 +173,49 @@ Source of truth: `docs/PHASE3_PLAN.md` + per-milestone specs (e.g. `docs/P3.1_RA
   as visible proof). Complements `clearSave()` (the single-key New-Game wipe); no schema change. Verified:
   with a save present the menu shows Continue + New Game + Erase; second `onErase()` clears a planted stale
   `lastnight.save.v0` too, `hasSave()` → false, salvage back to 0, and the re-render shows only New Game.
+
+### P3.6 notes / follow-ups
+- **The cursor is now load-bearing**: `GameScene.create()` resolves `CONFIG.LEVELS[runState.levelIndex] ?? LEVELS[1]`
+  into `this.level` once, and every geometry/biome/spawn/endMarker read goes through it (including `update()`'s
+  win check). Adding Level 3 is a new `LEVELS` row + its bg asset paths — no engine edit. The forest data is
+  byte-identical (L1 loads exactly as before); only its enemy list moved into `zones`.
+- **Zone-triggered spawns**: `LEVEL.zones = [{ triggerX, enemies }]`; `update()` fires each zone once when
+  `player.x >= triggerX`, tracked by **zone-object identity** in a `firedZones` `Set` (re-crossing never
+  re-spawns). Pacing is **authored** in the zone layout (L2: opening skirmish → lull → build w/ a perched
+  Spitter → lull → Tank+Flyer climax), not coded — the engine only fires by position. A `triggerX:0` zone
+  spawns at level start (how L1 keeps its off-screen-at-start feel).
+- **Biome = a small asset bundle on the level**, not a hardcode: each level names its `bgLayers` (key+parallax
+  factor list) and `tileset` key (+ optional `tilesetTint`). `buildParallax()` iterates that list (variable
+  count — forest 4, ruins 3) and scales each layer's texture by `544/sourceHeight` so the shorter ruins art
+  (324px) fills vertically without tiling the horizon (forest computes to 1.0 → unchanged). `BootScene`
+  preloads both biomes up front under `bg-forest-*` / `bg-ruins-*` keys.
+- **Level 2 (ruins)** is a genuinely new map — its own shorter (`worldWidth 5200`), more-vertical layout,
+  distinct `platforms`/`endMarkerX`/`pickups`, over the **post-apocalypse parallax** with a tinted reused
+  tileset. **Flyer debuts** here (climax, gravity-off blob). `nextLevelId` drives progression: `advanceLevel()`
+  follows it; L2's `null` routes the shop Continue to a new trivial **`EndScene`** ("Chapter 1 — to be
+  continued", no HUD) — the exact seam **P3.7's boss** replaces.
+- **Bug fixed mid-build (caught by the harness)**: `Bullet.js` + `AcidProjectile.js` still destructured the
+  now-removed `CONFIG.LEVEL.worldWidth` for their out-of-bounds check → they **threw the instant a round/glob
+  went in flight**, aborting the update frame (which silently skipped the zone spawner). A gradual-advance
+  diagnostic surfaced it (the Spitter's acid broke the L2 climax spawn); fix: read `this.scene.level` (the
+  resolved level). Lesson logged: a `CONFIG.LEVEL → LEVELS` rename must sweep **entity** files, not just scenes.
+- **Parked**: the reused **tinted ground tileset** reads as tinted-forest, not stone — real ruins ground tiles
+  drop in later on the same `tileset` key. **Flyer stays on its blob** (airborne-sprite problem unchanged).
+  `EndScene` is a text placeholder → **boss/victory at P3.7**. **Known cosmetic nit**: the L5 intro card still
+  reads "Reach the far side of the forest" on L2 — a per-level subtitle is a small follow-up (UIScene reading
+  `LEVELS[levelIndex]`).
+- **Playtest fix — Runner unhittable at close range**: bullets spawn at the player's gun line
+  (`feet + muzzleOffset.y` ≈ y462), but the Runner's real-art body (`artScale 0.70`) was only 36px tall,
+  spanning `[488..524]` — its top sat **26px below the gun line**, so close/point-blank rifle shots sailed
+  over the short Runner's head (it renders ~64px but the hitbox covered only the lower torso). Fix: grew the
+  explicit body to cover the full silhouette (`height 52→89`, `offsetY 59→22`) → scales to `[462..524]`,
+  the same span as a standard zombie, top on the gun line. Verified: Runner now takes hits at close range
+  identically to `Zombie_1` (was MISS at every distance). *(Spitter's body top is 7px low — a much smaller
+  margin on a ranged kiter that's rarely point-blank; left as-is.)*
+- Verified with the puppeteer-core harness (A–I, 9/9): both biomes' textures load (0 errors/404s); **L1
+  regression** — its zones reproduce the exact roster (Zombie×5 family, Runner pair @2060/2300, Spitter @1500,
+  Tank @3600); **cursor drives the level** (levelIndex 2 → ruins, platforms/worldWidth **differ** from L1);
+  **zones fire once** (2 at L2 start → +Z2 on advance, re-cross no-op, `firedZones` size 2); pacing order
+  ascending w/ Tank+Flyer climax; Flyer gravity-off + homes 2D; **L1→shop→L2 flow** (salvage 13 + shotgun
+  unlock intact across the transition; L2 `nextLevelId:null` → EndScene, not a loop); no scene/enemy leak
+  (6 scenes stable), 58–59 FPS.
