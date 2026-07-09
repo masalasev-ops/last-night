@@ -25,7 +25,7 @@ The **POC** (`docs/BUILD.md`) and the **Phase 2 one-level slice** (`docs/BUILD_P
 ## Established conventions (hard-won — preserve these)
 - Physics bodies are explicit per entity (`PLAYER_BODY`, `ZOMBIE_BODY`), origin at feet, decoupled from the 128px sprite.
 - Animation controllers **read** state and play the matching anim; they never change movement/AI logic. Priority is explicit (death > hurt > … ), never gated solely on `anims.isPlaying`.
-- Enemies use a shared FSM (PATROL→CHASE→ATTACK→RETREAT→HURT→DEAD) in `Enemy.preUpdate`; the four zombies are one behavior differing only by art. New behaviors are added via an `aiProfile` branch, not a new class.
+- Enemies use a shared FSM (PATROL→CHASE→ATTACK→RETREAT→HURT→DEAD) in `Enemy.preUpdate`; the four zombies are one behavior differing only by art. New behaviors are added via an `enemyProfile` branch, not a new class.
 - `corpseLinger`, directional facing, and per-frame tuning are all in config.
 
 ## Assets (`public/assets/`, served at `assets/…`)

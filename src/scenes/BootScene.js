@@ -81,7 +81,7 @@ export class BootScene extends Scene {
     this.generateLightTextures();
     registerAnimations(this);
 
-    // DoD verification: confirm every animation registered (9 player + 25 zombie-family + 5 spitter + 1 pickup = 40)
+    // DoD verification: confirm every animation registered (9 player + 30 zombie-family [6 types × 5] + 5 spitter + 1 pickup = 45)
     console.log(
       `[BootScene] Animations registered: ${this.anims.anims.size} →`,
       [...this.anims.anims.keys()],

@@ -54,8 +54,8 @@ export class Enemy extends Physics.Arcade.Sprite {
   spawn(x, y, type) {
     this.type = type; // roster id — drives salvageDrop / spawn lookups; stays the type even when `sheet` reskins
     // Per-type roster entry selects the FSM behavior branch (P3.1). Default 'melee' if unlisted.
-    const def = CONFIG.ENEMIES[type] ?? { aiProfile: 'melee' };
-    this.aiProfile = def.aiProfile;
+    const def = CONFIG.ENEMIES[type] ?? { enemyProfile: 'melee' };
+    this.enemyProfile = def.enemyProfile;
     this.def = def;
     // Animation/texture key (P3.4). A data variant may set `sheet` to borrow another type's frames (Runner
     // renders Zombie_2, Tank renders Zombie_3); anims are played from animKey, while this.type stays the id.
@@ -63,7 +63,7 @@ export class Enemy extends Physics.Arcade.Sprite {
 
     // --- Flyer (P3.4): the one new profile — ignores gravity, homes in 2D. Placeholder blob (anim-less),
     // like the Spitter's blob-fallback path. Centre-origin (airborne, not feet-grounded). ---
-    if (this.aiProfile === 'flyer') {
+    if (this.enemyProfile === 'flyer') {
       const body = def.body;
       const artScale = def.artScale ?? 1;
       this.animated = false;         // blob: the animation controller must not try to play frames
@@ -85,7 +85,7 @@ export class Enemy extends Physics.Arcade.Sprite {
       return;
     }
 
-    if (this.aiProfile === 'ranged') {
+    if (this.enemyProfile === 'ranged') {
       // Ranged Spitter. Real art enters through the swap-point: if the real sheet TEXTURE loaded,
       // use the 128px sheet + ACID_SPITTER_BODY + animations; otherwise fall back to the generated
       // green blob (anim-less) with its own small body. Golden rule 4 — missing art never breaks the
@@ -244,7 +244,7 @@ export class Enemy extends Physics.Arcade.Sprite {
     const climbHeight = stat('climbHeight');
     const retreatDistance = stat('retreatDistance');
     const player = this.player;
-    const isRanged = this.aiProfile === 'ranged';
+    const isRanged = this.enemyProfile === 'ranged';
 
     // Guard: if player ref isn't set yet, stand idle
     if (!player || !player.active) {
@@ -261,7 +261,7 @@ export class Enemy extends Physics.Arcade.Sprite {
     // --- Flyer (P3.4): homes in 2D toward the player and ignores ALL perch/RETREAT/climb logic (it can
     // reach a perched player). Ticks its own attack cooldown here since it returns before the ATTACK-state
     // tick, and deals touchDamage on contact via the same idiom melee ATTACK uses — no new FSM state. ---
-    if (this.aiProfile === 'flyer') {
+    if (this.enemyProfile === 'flyer') {
       this.attackTimer = Math.max(0, this.attackTimer - dt);
       if (distToPlayer <= detectionRadius) {
         const len = distToPlayer || 1; // zero-guard the normalization (avoid /0 → NaN velocity)

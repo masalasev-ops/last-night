@@ -53,7 +53,7 @@ Split point: **3a = P3.1–P3.5 (combat + systems)**, **3b = P3.6–P3.10 (conte
 ### Phase 3a — Combat depth & systems
 
 **P3.1 — Ranged enemy + enemy-projectile system** *(start here)*
-`aiProfile: 'ranged'` on the FSM: maintain a preferred distance, check line-of-sight, fire on cooldown. A pooled enemy-projectile — **green acid, lobbed in an arc** (so a perched player must actually dodge, turning the RETREAT stopgap into a real threat). Built with a placeholder enemy; spitter art dropped in later.
+`enemyProfile: 'ranged'` on the FSM: maintain a preferred distance, check line-of-sight, fire on cooldown. A pooled enemy-projectile — **green acid, lobbed in an arc** (so a perched player must actually dodge, turning the RETREAT stopgap into a real threat). Built with a placeholder enemy; spitter art dropped in later.
 *DoD:* a ranged enemy keeps distance, lobs arcing acid on cooldown, damages the player (incl. perched), dies via the existing FSM; projectiles pooled; 60 FPS.
 
 **P3.2 — Data-driven weapon system + switching**
@@ -65,7 +65,7 @@ Enemies drop **salvage**. On level-complete, an **end-of-level shop scene** lets
 *DoD:* enemies drop salvage that's counted; the shop opens on level-complete and spends salvage to unlock/upgrade; effects apply and persist into the next level; leaving the shop continues the game.
 
 **P3.4 — Enemy roster expansion**
-2–3 more types via `aiProfile` + data (fast **runner**, **tank**, optional **flyer**), reusing the FSM. Placeholder-first; AI art later.
+2–3 more types via `enemyProfile` + data (fast **runner**, **tank**, optional **flyer**), reusing the FSM. Placeholder-first; AI art later.
 *DoD:* new types exist as data + existing profiles, each distinct; a mixed-group fight reads clearly; 60 FPS.
 
 **P3.5 — Checkpoints & save/load**
@@ -106,7 +106,7 @@ Not character art. Just: **3 small HUD weapon icons** (~32px — CraftPix icon f
 WEAPONS[id]  = { name, fireMode:'single'|'auto'|'burst', damage, fireRate, magSize,
                  reloadTime, bulletSpeed, range, pellets, spreadDeg, ammoType,
                  projectileTint, muzzleScale, hudIcon, sfxFire, sfxReload }
-ENEMIES[type]= { aiProfile:'melee'|'ranged'|'runner'|'tank'|'flyer', maxHealth, moveSpeed,
+ENEMIES[type]= { enemyProfile:'melee'|'ranged'|'runner'|'tank'|'flyer', maxHealth, moveSpeed,
                  chaseSpeed, detectionRadius, attackRange, touchDamage, attackCooldown,
                  salvageDrop:{min,max}, sheet, body,
                  // ranged: projectileId, preferredRange, projectileSpeed, projectileArc }

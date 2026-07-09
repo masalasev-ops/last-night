@@ -109,17 +109,17 @@ export const CONFIG = {
     corpseLinger: 1.5, // s — how long the dead pose holds on the ground before pooling out
   },
 
-  // Per-type enemy roster (Phase 3). `aiProfile` selects the FSM behavior branch in Enemy.preUpdate.
+  // Per-type enemy roster (Phase 3). `enemyProfile` selects the FSM behavior branch in Enemy.preUpdate.
   // Melee zombies keep their shared tuning in CONFIG.enemy + ZOMBIE_BODY (unchanged) — their entry only
   // declares the profile. The ranged Spitter carries its own full tuning here (the extension pattern
   // P3.4 reuses). detectionRadius >= firingRange so it's never in firing range while still unengaged.
   ENEMIES: {
-    Zombie_1: { aiProfile: 'melee' },
-    Zombie_2: { aiProfile: 'melee' },
-    Zombie_3: { aiProfile: 'melee' },
-    Zombie_4: { aiProfile: 'melee' },
+    Zombie_1: { enemyProfile: 'melee' },
+    Zombie_2: { enemyProfile: 'melee' },
+    Zombie_3: { enemyProfile: 'melee' },
+    Zombie_4: { enemyProfile: 'melee' },
     Spitter: {
-      aiProfile: 'ranged',
+      enemyProfile: 'ranged',
       maxHealth: 24,
       moveSpeed: 110,                          // px/s (kiting)
       detectionRadius: 440,                    // px — >= firingRange (no "in range but unengaged" dead zone)
@@ -127,7 +127,7 @@ export const CONFIG = {
       firingRange: 420,                        // px — max distance it will spit from
       attackCooldown: 1.6,                     // s between spits
       salvageDrop: { min: 2, max: 4 },         // P3.3 salvage economy — spitter drops more than melee
-      // AI art is drawn ~3 tiles tall (95px) vs the ~2-tile (67px) zombies; scale it down to sit in
+      // art is drawn ~3 tiles tall (95px) vs the ~2-tile (67px) zombies; scale it down to sit in
       // the roster. 0.78 → ~74px (~1.1× a zombie): a touch bulkier, not towering. The body + spit
       // muzzle scale with this automatically (Enemy.spawn / GameScene.spawnAcid) — tune this one value.
       artScale: 0.78,
@@ -146,9 +146,9 @@ export const CONFIG = {
     // type borrow an existing zombie's frames (rendered via a `tint` + `artScale` so variants read now).
     // Real per-type art is a later swap-point drop. All numbers are tuning starting points. ---
     Runner: {
-      // Real dried-blood AI art (public/assets/Runner/, registered under ASSETS.zombies). `sheet`+`tint`
+      // Real dried-blood art (public/assets/Runner/, registered under ASSETS.zombies). `sheet`+`tint`
       // dropped — animKey now resolves to 'Runner' (its own sheet), which carries its own color.
-      aiProfile: 'melee',
+      enemyProfile: 'melee',
       artScale: 0.70,   // → ~64px, ≈ a standard zombie; the lean bloodied silhouette + speed read distinct
       // Explicit torso body (required now that `sheet` is gone — no ZOMBIE_BODY['Runner'] to fall back to).
       // Measured from Idle.png: feet row ~112 (originY 0.87), character center-x 66; offsetX 52 centers the
@@ -159,17 +159,22 @@ export const CONFIG = {
       salvageDrop: { min: 1, max: 2 },
     },
     Tank: {
-      aiProfile: 'melee', sheet: 'Zombie_3', tint: 0x8faf7a, artScale: 1.28, // big + sickly-green = bullet sponge
+      // Real hulking-brute art (public/assets/Tank/, registered under ASSETS.zombies). `sheet`+`tint`
+      // dropped — animKey now resolves to 'Tank' (its own sheet), which carries its own color.
+      enemyProfile: 'melee',
+      artScale: 1.25,   // big brute — tune live vs a zombie/Runner (placeholder used 1.28)
+      // Explicit torso body (required now that `sheet` is gone — no ZOMBIE_BODY['Tank'] to fall back to).
+      // Measured from Idle.png: feet row ~108 (originY 0.84 → 107.5; offsetY 43 + h64 = 107), character
+      // center-x 64; offsetX 45 centers the 38-wide body on the FRAME centre (45+19=64) so flipX never
+      // shifts the hitbox. Arcade scales body+offset by artScale around the feet origin (as Spitter/Runner).
+      body: { width: 38, height: 64, originX: 0.5, originY: 0.84, offsetX: 45, offsetY: 43, facesLeft: false },
       maxHealth: 90, moveSpeed: 70, chaseSpeed: 110, touchDamage: 22, attackCooldown: 1.2,
       salvageDrop: { min: 3, max: 5 },
-      // Body = Zombie_3's torso box scaled by artScale (Arcade scales body+offset around the feet origin,
-      // as the Spitter does), so it stays fitted + grounded at 1.28×. Fine without an explicit override
-      // in playtest; add a `body` here only if the debug overlay shows it doesn't hug the bulkier art.
     },
-    // Flyer — the ONE new aiProfile branch: ignores gravity, homes toward the player on both axes (can
+    // Flyer — the ONE new enemyProfile branch: ignores gravity, homes toward the player on both axes (can
     // reach a perched player), deals touchDamage on contact. Placeholder blob until art lands.
     Flyer: {
-      aiProfile: 'flyer', tint: 0xc79aff, artScale: 0.7,          // purple, small, airborne
+      enemyProfile: 'flyer', tint: 0xc79aff, artScale: 0.7,          // purple, small, airborne
       maxHealth: 20, flySpeed: 200, detectionRadius: 420, touchDamage: 10, attackCooldown: 0.8,
       salvageDrop: { min: 2, max: 3 },
       // Explicit blob body (art never drives it). CENTRE origin (0.5,0.5) — airborne, not feet-grounded —
@@ -354,11 +359,11 @@ export const CONFIG = {
       { x: 3440, y: 524, type: 'Zombie_1' },
       { x: 3520, y: 524, type: 'Zombie_2' },
       // P3.4 mixed roster cluster (~x2050–2300, open ground before the x2500 zombie): a Tank flanked by
-      // two Runners, with a Flyer patrolling the air over the gap — demonstrates the size/speed/height mix.
+      // two Runners — demonstrates the size/speed mix. (Flyer type stays defined in ENEMIES; it debuts
+      // in a later level, so it's not placed here.)
       { x: 2060, y: 524, type: 'Runner' },
       { x: 2180, y: 524, type: 'Tank' },
       { x: 2300, y: 524, type: 'Runner' },
-      { x: 2180, y: 390, type: 'Flyer' },
       // P3.1 ranged Spitter — on the ground between the mid-crossing ledges (#3 x1360 / #4 x1616) so a
       // player perched on x1360 (rise ~100px) sits inside firingRange and the spitter must lob acid up.
       { x: 1500, y: 524, type: 'Spitter' },
@@ -415,10 +420,11 @@ export const ASSETS = {
   zombies: {
     dir: 'assets/urban-zombie-sprite-sheet-pixel-art-pack',
     // Per-type dir override (BootScene reads dirs?.[type] ?? dir). The loader builds `${dir}/${type}/File`,
-    // so it already appends the type name as the folder — the Runner's real art lives at
-    // assets/Runner/*.png, hence the parent `'assets'` here (NOT 'assets/Runner', which would double to
-    // assets/Runner/Runner/). The four Zombie_N fall through to `dir`. Filenames stay the capitalized state.
-    dirs: { Runner: 'assets' },
+    // so it already appends the type name as the folder — the Runner's and Tank's real art live at
+    // assets/Runner/*.png and assets/Tank/*.png, hence the parent `'assets'` here (NOT 'assets/Runner',
+    // which would double to assets/Runner/Runner/). The four Zombie_N fall through to `dir`. Filenames
+    // stay the capitalized state.
+    dirs: { Runner: 'assets', Tank: 'assets' },
     frame: 128,
     // Per-type frame counts. Sheet filenames are the capitalized state (idle → Idle.png). The Runner
     // rides the zombie-family loader/anim-registration (it's a melee type; `walk` plays its run strip).
@@ -428,6 +434,7 @@ export const ASSETS = {
       Zombie_3: { idle: 6, walk: 10, attack: 4,  hurt: 4, dead: 5 },
       Zombie_4: { idle: 7, walk: 12, attack: 10, hurt: 4, dead: 5 },
       Runner:   { idle: 6, walk: 10, attack: 5,  hurt: 4, dead: 5 }, // real dried-blood art (walk = fast run)
+      Tank:     { idle: 6, walk: 10, attack: 4,  hurt: 4, dead: 5 }, // real brute art (walk = slow lumber; attack 4!)
     },
     fps: { idle: 6, walk: 10, attack: 12, hurt: 12, dead: 8 },
   },
