@@ -191,6 +191,41 @@ export const CONFIG = {
     },
   },
 
+  // Boss roster (P3.7) — a boss is a DEDICATED entity (src/entities/Boss.js), NOT a pooled enemy: phases +
+  // telegraphed attacks are code (the controller), thresholds/cadences/params are data here. Sized BIG so it
+  // reads as a set-piece (~280px tall, ≈2.4× the Tank) but capped under the 540 play area. Placeholder blob.
+  BOSS: {
+    boss1: {
+      barName: 'THE WARDEN',
+      barColor: 0x9a2a3a,
+      maxHealth: 400,                 // live-tune knob #1 — vs actual weapon+upgrade DPS
+      artScale: 1.7,                  // 160px placeholder × 1.7 → ~272px tall silhouette (≈2.3× Tank ~118px)
+      widthScale: 0.9,                // horizontal-only squash (playtest): 10% narrower Warden — scaleX = artScale×0.9,
+                                      // scaleY unchanged, so height stays ~272px. Arcade narrows the body with it (stays fitted/centred).
+      // Explicit BIG body, feet-grounded (originY 1.0). Centred on the 128-wide frame (offsetX 20 → 20+88=108,
+      // ~centre). Arcade scales body+offset by artScale around the feet origin on the next step (as Tank/Spitter).
+      body: { width: 88, height: 150, originX: 0.5, originY: 1.0, offsetX: 20, offsetY: 8, facesLeft: false },
+      muzzleOffset: { x: 0, y: -100 }, // acid origin (unscaled px from feet); spawnAcid scales it by artScale
+      contactDamage: 22,               // dealt only while a lunge is committed (onPlayerTouchBoss gated on contactActive)
+      patrolMinX:800,                 // leftmost the Warden's CENTRE paces to — keeps it well clear of the player's
+                                      // start (spawn x200), leaving a safe fallback zone on the left (live-tune)
+      patrolMargin: 120,               // px inset from the RIGHT arena edge where the Warden turns around (live-tune)
+      introMs: 1400,                   // scripted entrance telegraph (player locked, then control returns)
+      deathMs: 1600,                   // collapse/flash before the payoff beat fires
+      transitionMs: 900,               // P1→P2 telegraph beat (brief invuln flash)
+      lunge: { telegraphMs: 600, commitMs: 450, recoverMs: 750 }, // dash speed comes from the phase
+      acid:  { telegraphMs: 700, recoverMs: 800, spread: 180 },   // fanned volley half-width (px around the player)
+      // Two phases, selected by HP fraction (P1 while hpFrac > 0.5, then P2). P2 is faster + denser, not a
+      // stat cliff. `attacks` is the pool the controller randomly draws from; `acidGlobs` sizes the fan.
+      // `moveSpeed` is now the PATROL pace (px/s) — the Warden paces its arena between attacks; P2 paces faster.
+      // Both stay well under the player (walk 260 / sprint 416) so it can be out-repositioned.
+      phases: [
+        { hpAbove: 0.5, moveSpeed: 90,  attackCadence: 2.4, attacks: ['lunge', 'acid'], acidGlobs: 2, lungeSpeed: 420 },
+        { hpAbove: 0.0, moveSpeed: 130, attackCadence: 1.5, attacks: ['lunge', 'acid'], acidGlobs: 4, lungeSpeed: 560 },
+      ],
+    },
+  },
+
   // Acid projectile (P3.1) — pooled, ballistic: it arcs under its own gravityY so it can reach a player
   // perched on a ledge above the spitter (answering the perch exploit with a real threat).
   acid: {
@@ -294,6 +329,7 @@ export const CONFIG = {
     spitter: '#4faf5a', // P3.1 placeholder spitter blob (green)
     acid: '#7fe08a',    // P3.1 acid projectile + splat (green)
     flyer: '#c8ccd4',   // P3.4 flyer blob base — LIGHT so each Flyer row's non-white `tint` colourises it
+    boss: '#5a1f2a',    // P3.7 boss placeholder silhouette — dark blood-crimson, menacing
   },
 
   placeholder: {
@@ -304,6 +340,7 @@ export const CONFIG = {
     SPITTER: { key: 'spitter', width: 40, height: 52 }, // P3.1 ranged-enemy blob (real art swaps in later)
     ACID: { key: 'acid', width: 12, height: 12 },       // P3.1 acid glob
     FLYER: { key: 'flyer', width: 44, height: 32 },     // P3.4 flying-enemy blob (real art swaps in later)
+    BOSS: { key: 'boss', width: 128, height: 160 },     // P3.7 boss silhouette base (scaled ~1.7× → ~272px tall)
   },
 
   // Single map of entity type → texture key. This is the future art swap-point
@@ -396,7 +433,7 @@ export const CONFIG = {
       bgLayers: [['bg-ruins-0', 0.15], ['bg-ruins-1', 0.35], ['bg-ruins-2', 0.60]],
       tileset: 'tileset',
       tilesetTint: 0x9b8f78,
-      nextLevelId: null, // end of Chapter 1 content → the "to be continued" placeholder (P3.7 boss plugs in here)
+      nextLevelId: 3, // P3.7: clearing L2 → shop → Continue → the boss arena (Level 3)
       // Distinct layout: rubble steps → a quiet gap → a ruined-tower climb (Spitter perch) → peak → climax perches.
       platforms: [
         { x: 480,  y: 452, width: 96,  height: 16 },  // opening rubble step
@@ -425,6 +462,47 @@ export const CONFIG = {
         // Z3 — climax: a Tank anchors while a Flyer harasses over the gap and a Zombie_4 flanks.
         { triggerX: 3550, enemies: [{ x: 4000, y: 524, type: 'Tank' }, { x: 3900, y: 360, type: 'Flyer' }, { x: 4200, y: 524, type: 'Zombie_4' }] },
       ],
+    },
+
+    // ---- Level 3 — BOSS ARENA (P3.7): a bounded ruins arena, no traversal win. Completion = boss defeated. ----
+    3: {
+      biome: 'ruins',
+      subtitle: 'The Warden bars the way',
+      atmosphere: false,             // daylight (reuses the L2 ruins look)
+      worldWidth: 1700,              // live-tune knob #2 — bounded arena, enough room to dodge (no long traversal)
+      worldHeight: 540,
+      groundY: 524,
+      spawn: { x: 200, y: 504 },     // player enters at the left
+      bgLayers: [['bg-ruins-0', 0.15], ['bg-ruins-1', 0.35], ['bg-ruins-2', 0.60]],
+      tileset: 'tileset',
+      tilesetTint: 0x9b8f78,
+      // A boss arena: GameScene branches on `boss` — spawns the Boss (not zones), skips the endMarker win, and
+      // routes completion through onBossDefeated → beatOnDefeat. No `endMarkerX` (the player can't walk past).
+      boss: 'boss1',
+      bossSpawn: { x: 1300, y: 524 },
+      nextLevelId: null,             // end of Chapter 1 content (the beat → Victory is the payoff, not a shop)
+      // A little cover / verticality to break line-of-sight on the acid volley and give the lunge something to read against.
+      platforms: [
+        { x: 620,  y: 432, width: 140, height: 16 },
+        { x: 1040, y: 410, width: 140, height: 16 },
+      ],
+      pickups: [
+        { x: 760, y: 524, type: 'health' }, // one chest for the fight
+      ],
+      // Data-driven chapter payoff (P3.7). onBossDefeated reads this; VictoryScene renders it by `type`.
+      // A later chapter's boss sets type:'rescue' (or another beat) — same hook, no engine change.
+      beatOnDefeat: {
+        type: 'clueAndAlly',
+        ally: 'survivor',
+        dialogue: [
+          'You… you actually put it down. The Warden.',
+          'Others tried. It wore their bones on its back.',
+          'There’s a bunker east — past the dead city. People, last I heard.',
+        ],
+        clue: 'CLUE: a key stamped "17-B" hung from the Warden’s belt.',
+        title: 'CHAPTER 1 COMPLETE',
+        hook: 'Head east to the bunker. Chapter 2 awaits.',
+      },
     },
   },
 

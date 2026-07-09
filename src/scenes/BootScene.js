@@ -209,6 +209,29 @@ export class BootScene extends Scene {
     g.generateTexture(fl.key, fl.width, fl.height);
     g.destroy();
 
+    // --- Boss (P3.7): a large menacing silhouette at BOSS dims (feet at the bottom — body origin is feet).
+    // Broad hunched shoulders + a low head + glowing eyes read as a heavy brute even before real art. Tint
+    // from palette.boss; scaled ~1.7× in-game to tower over normal enemies. ---
+    g = this.make.graphics({ x: 0, y: 0, add: false });
+    const bs = placeholder.BOSS;
+    const bw = bs.width, bh = bs.height, bcx = bw / 2;
+    g.fillStyle(hexToInt(palette.boss), 1);
+    g.fillRect(bcx - 34, bh - 46, 26, 46);                                   // left leg
+    g.fillRect(bcx + 8, bh - 46, 26, 46);                                    // right leg
+    g.fillRoundedRect(bcx - 46, bh - 120, 92, 82, 14);                       // torso
+    g.fillRoundedRect(bcx - 64, bh - 110, 20, 68, 8);                        // left arm
+    g.fillRoundedRect(bcx + 44, bh - 110, 20, 68, 8);                        // right arm
+    g.fillTriangle(bcx - 58, bh - 98, bcx - 40, bh - 124, bcx - 18, bh - 98); // left shoulder hunch
+    g.fillTriangle(bcx + 58, bh - 98, bcx + 40, bh - 124, bcx + 18, bh - 98); // right shoulder hunch
+    g.fillCircle(bcx, bh - 126, 22);                                         // head (low, between shoulders)
+    g.fillTriangle(bcx - 16, bh - 140, bcx - 7, bh - 160, bcx + 2, bh - 140); // back spike 1
+    g.fillTriangle(bcx + 3, bh - 140, bcx + 13, bh - 162, bcx + 22, bh - 140); // back spike 2
+    g.fillStyle(0xffcf3a, 1);                                                // glowing eyes
+    g.fillCircle(bcx - 8, bh - 128, 3.5);
+    g.fillCircle(bcx + 8, bh - 128, 3.5);
+    g.generateTexture(bs.key, bw, bh);
+    g.destroy();
+
     // --- Acid glob (P3.1): a small green disc ---
     g = this.make.graphics({ x: 0, y: 0, add: false });
     const ac = placeholder.ACID;

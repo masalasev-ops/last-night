@@ -25,6 +25,17 @@ export class UIScene extends Scene {
       .text(b.x + 6, b.y + b.h / 2, '', { fontFamily: hud.font.family, fontSize: hud.font.size - 3, color: '#0a0a0a' })
       .setOrigin(0, 0.5);
 
+    // --- Boss bar (P3.7): a wide top-centred bar, hidden until a boss fight. Mirrors the health bar (border +
+    // bg + fill shrinking left→right via scaleX). showBossBar/hideBossBar toggle it; update() drives the fill. ---
+    const bbw = 520, bbh = 18, bbx = (width - bbw) / 2, bby = 22;
+    this.bossBarBorder = this.add.rectangle(bbx - 3, bby - 3, bbw + 6, bbh + 6, 0x101014).setOrigin(0, 0).setDepth(20).setVisible(false);
+    this.bossBarBg = this.add.rectangle(bbx, bby, bbw, bbh, 0x2a0a10).setOrigin(0, 0).setDepth(20).setVisible(false);
+    this.bossFill = this.add.rectangle(bbx, bby, bbw, bbh, 0x9a2a3a).setOrigin(0, 0).setDepth(20).setVisible(false);
+    this.bossName = this.add
+      .text(width / 2, bby + bbh + 4, '', { fontFamily: hud.font.family, fontSize: 13, color: '#e8c8cc' })
+      .setOrigin(0.5, 0).setStroke(hud.stroke.color, hud.stroke.thickness).setDepth(20).setVisible(false);
+    this.boss = null;
+
     // --- Ammo + weapon, below the bar (dark outline so they read over the bright forest) ---
     this.ammoText = this.add
       .text(b.x, b.y + b.h + 6, '', {
@@ -70,7 +81,26 @@ export class UIScene extends Scene {
 
     this.showIntro();
 
+    // Boss arena (P3.7): GameScene sets its `boss` before UIScene's deferred create() runs, so show the bar
+    // now — this is what re-shows it after a boss-arena death-restart (UI is stopped + relaunched each create).
+    const gs = this.scene.get('Game');
+    if (gs && gs.boss) this.showBossBar(gs.boss);
+
     console.log('[UIScene] ready');
+  }
+
+  /** Reveal + bind the boss bar to a boss (called by GameScene / this.create when a boss arena loads). */
+  showBossBar(boss) {
+    this.boss = boss;
+    this.bossName.setText(boss.barName ?? 'BOSS');
+    this.bossFill.setFillStyle(boss.barColor ?? 0x9a2a3a);
+    [this.bossBarBorder, this.bossBarBg, this.bossFill, this.bossName].forEach((o) => o.setVisible(true));
+  }
+
+  /** Hide + unbind the boss bar (called from onBossDefeated). */
+  hideBossBar() {
+    this.boss = null;
+    [this.bossBarBorder, this.bossBarBg, this.bossFill, this.bossName].forEach((o) => o && o.setVisible(false));
   }
 
   /**
@@ -129,6 +159,12 @@ export class UIScene extends Scene {
 
     // Salvage counter (P3.3) — live from RunState
     this.salvageText.setText(`SALVAGE ${runState.salvage}`);
+
+    // Boss bar (P3.7) — fill = boss HP fraction; shown only while bound. Updates through the death sequence
+    // (health 0 → empty) until onBossDefeated calls hideBossBar.
+    if (this.boss) {
+      this.bossFill.scaleX = Math.max(0, Math.min(1, this.boss.health / this.boss.maxHealth));
+    }
 
     // Death overlay. (Win no longer shows here — level-complete transitions straight to the ShopScene,
     // which stops this UI, so a "YOU MADE IT" branch would be unreachable.)

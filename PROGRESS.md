@@ -44,6 +44,7 @@ Source of truth: `docs/PHASE3_PLAN.md` + per-milestone specs (e.g. `docs/P3.1_RA
 | **P3.4 — Enemy roster (Runner / Tank / Flyer)** | Generalized `Enemy.preUpdate` stat resolution to `this.def.<stat> ?? CONFIG.enemy.<stat>` for **every** shared stat (was ranged-only) + a `sheet`→`animKey` override in `spawn()`. That makes **Runner** (fast/fragile) and **Tank** (slow/tanky/big) **pure `ENEMIES` data rows on the melee FSM — zero new code** (they shipped as tinted, rescaled zombie sheets). **Flyer** is the one new `enemyProfile:'flyer'` branch: gravity-off, homes in 2D, reaches a perched player, damages on contact (placeholder blob). Melee zombies unchanged (inherit defaults). Shipped on placeholders; **real Tank art (PixelLab, own sheet) + a threat-tune have since landed** via the swap-point — Runner + Flyer stay placeholders (see post-P3.4 note). | ✅ Done |
 | **P3.5 — Save / Continue (level-boundary checkpoints)** | Persisted the in-memory `RunState` to **versioned localStorage** (`lastnight.save.v1`, `SCHEMA_VERSION`) so a run survives a browser reload, plus a `levelIndex`/`phase` cursor. **The only checkpoint is a level boundary**: clearing a level banks salvage + saves (`phase:'shop'`); **dying reverts to the in-memory level-start `_checkpoint`** (attempt's salvage discarded, unlocks/upgrades intact) and replays the level — **no save written on death**. Two synced concerns: **`_checkpoint`** (death-revert, works even if storage is blocked) vs **on-disk save** (cross-session Continue). Load = **set fields + `recompute()`** (weapons table never serialized; `ownedUpgrades` rehydrated as a `Set`) — the P3.2/P3.3 seam pays off again. New **`TitleScene`** (text; the confirmed entry point, not auto-Continue): **Continue** shows only when `hasSave()`, its label named from `peekSave()` (`Level N` / `Shop (Level N cleared)`); **New Game** wipes + resets + starts L1. All `localStorage` access `try/catch`ed — corrupt/wrong-version/blocked all degrade to "no save", never a crash. *(Later add: an **Erase Save** Title item — `clearAllSaves()` wipes every `lastnight.*` key behind a two-click confirm.)* | ✅ Done |
 | **P3.6 — Level system + Level 2 (ruins biome)** | Turned the single hardcoded `CONFIG.LEVEL` into a **`CONFIG.LEVELS` table keyed by `levelIndex`**; `GameScene.create()` resolves `CONFIG.LEVELS[runState.levelIndex] ?? LEVELS[1]` **once** into `this.level` and everything downstream (bounds, terrain, parallax, spawn, endMarker, pickups, `update()`'s win check) reads it — the wiring that finally **consumes the P3.5 cursor**. Each level carries a **biome bundle** (`bgLayers` keys+factors, `tileset` key, optional `tilesetTint`) + a `nextLevelId` cursor; `buildParallax()` handles a **variable layer count** (forest 4, ruins 3) and per-layer `tileScale`. Enemies now spawn via a **zone-triggered system** (`LEVEL.zones = [{triggerX, enemies}]`, fired once each as the player advances, tracked in `firedZones`) instead of all at `create()` — pacing is **authored** (tension→lull→tougher), not coded. **Level 2** is a genuinely new, shorter, more-vertical **apocalyptic-ruins** map (its own layout/worldWidth/endMarker/pickups + a tinted reused tileset under the post-apocalypse parallax), with the **Flyer debuting** in its climax. `advanceLevel()` follows `nextLevelId`; L2's `null` routes the shop Continue to a new **`EndScene`** ("Chapter 1 — to be continued") — the seam P3.7's boss plugs into. L1 re-expressed as zones plays as before. | ✅ Done |
+| **P3.7 — Boss fight + chapter payoff (Boss 1)** | The Chapter 1 climax, built as a **boss-arena `LEVELS` entry (Level 3)** reached via `LEVELS[2].nextLevelId=3` — reusing the whole `GameScene`/player/weapons/HUD/save stack, **not** a new scene and **not** a pooled `Enemy`. New **`Boss` entity** (`entities/Boss.js`): a **data-driven phase controller** (`CONFIG.BOSS.boss1.phases` selected by HP fraction — P1 → 50% → faster/denser P2) running an INTRO→(IDLE→TELEGRAPH→COMMIT→RECOVER)→DEAD loop with **two telegraphed attacks** — a **melee lunge** (wind-up → dash → recover; contact hurts only mid-lunge) and a **fanned acid volley** (reuses `spawnAcid` with a per-glob target offset, widening in P2). Every attack solid-**flashes** (Phaser 4 `setTint`+`FILL` — reads on the dark blob) so it's dodgeable; no one-shots. **Boss renders HUGE** (~272px placeholder silhouette, ≈2.3× the Tank) with a wide **`UIScene` boss bar**. On death, a distinct death sequence fires **`onBossDefeated` → data-driven `beatOnDefeat`** (`clueAndAlly`: a survivor + dialogue + a clue) → a new **`VictoryScene`** (chapter-complete + hook → Title), superseding `EndScene`. Intro locks the player then always restores control (no soft-lock); dying restarts the arena from full (P3.5). Placeholder-first: big tinted boss blob + placeholder ally + inline clue — real art/audio later. | ✅ Done |
 
 ### P3.1 notes / follow-ups
 - **AI-art pipeline** established (see CLAUDE.md → Assets): raw PixelLab frames git-ignored under
@@ -224,3 +225,43 @@ Source of truth: `docs/PHASE3_PLAN.md` + per-milestone specs (e.g. `docs/P3.1_RA
   ascending w/ Tank+Flyer climax; Flyer gravity-off + homes 2D; **L1→shop→L2 flow** (salvage 13 + shotgun
   unlock intact across the transition; L2 `nextLevelId:null` → EndScene, not a loop); no scene/enemy leak
   (6 scenes stable), 58–59 FPS.
+
+### P3.7 notes / follow-ups
+- **The boss is contained new code, not a new engine**: a boss-arena is just a `LEVELS` entry with a `boss`
+  key, so it inherits terrain/camera/HUD/weapons/upgrades and the P3.5 death-restart for free. `GameScene`
+  branches on `this.level.boss` in two spots (skip the endMarker/zone setup + drive `boss.tick`); everything
+  else is the `Boss` class. **Phases are data, the controller is code** — a 3rd phase (or a re-tune) is a
+  `CONFIG.BOSS.boss1.phases` row/edit, and swapping the ranged attack is a param change (it reuses `spawnAcid`
+  with a per-glob `targetX`). The boss is driven explicitly (`GameScene.update → boss.tick`), not via the
+  pooled group's `runChildUpdate`.
+- **Readable telegraphs on a dark placeholder**: a multiply `setTint` can't brighten the dark boss blob, so
+  attacks/enrage flash via Phaser 4's `setTint(color).setTintMode(FILL)` (a solid flash); `clearTint()` resets
+  both colour + mode. `setTintFill` is **removed in Phaser 4** (logs an error) — checked the source before wiring.
+- **No soft-locks (the DoD half that isn't "does it work")**: the intro locks the player via `player.locked`
+  but a `time.delayedCall(introMs)` ALWAYS restores control + opens the fight; a boss dying mid-attack is caught
+  by the `dying` guard in `tick`; the death `delayedCall(deathMs)` always fires `onBossDefeated` → Victory.
+- **`beatOnDefeat` is the reusable payoff seam**: `onBossDefeated` reads the level's beat and `VictoryScene`
+  **dispatches on `beat.type`** (`clueAndAlly` = ally + dialogue + clue → Victory panel; a `default` branch for
+  any other type) — so a later chapter's `rescue` is a data row + a render branch, no engine change (proven by
+  test G flipping the type). Contact damage is deliberately **lunge-only** (idle contact is safe/readable).
+- **Parked**: placeholder boss silhouette + placeholder ally + inline clue → **real art** later on the same
+  texture key (the boss is grounded → suits PixelLab); **no audio** (intro/attacks/death silent → P3.9); the
+  clue is a scripted line (**no note-reader/dialogue-tree**); **rescue** reserved for a later chapter. **Victory
+  doesn't mark the chapter complete** — the save still points at the arena start, so Continue would replay the
+  boss (a `completed` flag / save-clear on Victory is small later polish, ties into P3.8). Two **live-tune knobs**:
+  `BOSS.boss1.maxHealth` (400, vs real DPS) and `LEVELS[3].worldWidth` (1700, dodge room).
+- Verified with the puppeteer-core harness (A–I, 9/9, 0 errors/404s, 59–60 FPS): boss renders **272px** (≫ Tank
+  118, capped < 540); arena loads from the cursor (bounded, bar shown, no endMarker win); intro returns control;
+  **both attacks telegraph** (lunge dash + `contactActive`; acid arc reaches the player; the fan lands at distinct
+  targets); **P1→P2 transition** (globs 2→4, settles — no soft-lock); **death → beat → Victory** always reached;
+  **data-driven dispatch** (clueAndAlly vs a stub type render differently); **retry economics** (die → arena resets
+  boss to full, `levelIndex 3` + shop-bought unlock intact, one boss instance — no leak); full **L2 → shop →
+  Continue → boss arena** routing via `nextLevelId 3`.
+- **Post-DoD hotfix — Warden-level hang (playtest)**: shooting the boss threw `bullet.deactivate is not a
+  function` every overlap frame → the update loop died → frozen game. Cause: `onBulletHitBoss` is a
+  GROUP-vs-single-SPRITE overlap, which Phaser dispatches as **`(sprite, groupMember)`** — the boss arrived as
+  arg 1 and the bullet as arg 2, the **reverse** of the group-vs-group `onBulletHitEnemy` order the signature
+  assumed. The harness missed it because it damaged the boss via `boss.takeDamage()` directly and never fired a
+  real bullet through the overlap. Fixed by normalising the two args by identity (`a === this.boss`), so a future
+  arg re-order can't swap them again. Re-verified live: fired real bullets → boss **400 → 0 → Victory**, P1→P2
+  transition fired, UI stopped, **0 errors, 60 FPS**.

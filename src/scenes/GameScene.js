@@ -6,6 +6,7 @@ import { Bullet } from '../entities/Bullet.js';
 import { Enemy } from '../entities/Enemy.js';
 import { Pickup } from '../entities/Pickup.js';
 import { AcidProjectile } from '../entities/AcidProjectile.js';
+import { Boss } from '../entities/Boss.js';
 
 /**
  * GameScene — the main gameplay scene.
@@ -40,10 +41,13 @@ export class GameScene extends Scene {
     // Terrain — real tileset ground + one-way platforms (sets this.terrain, this.groundRow)
     this.buildTerrain();
 
-    // End marker — tall bright rectangle on the far right (visual; win trigger uses endMarkerX)
-    const markerX = LEVEL.endMarkerX;
-    const markerY = LEVEL.groundY - endMarker.height / 2;
-    this.add.rectangle(markerX, markerY, endMarker.width, endMarker.height, hexToInt(palette.bullet));
+    // End marker — tall bright rectangle on the far right (visual; win trigger uses endMarkerX). Boss arenas
+    // (P3.7) have no traversal win, so no marker — completion is boss-death via onBossDefeated.
+    if (!LEVEL.boss && LEVEL.endMarkerX != null) {
+      const markerX = LEVEL.endMarkerX;
+      const markerY = LEVEL.groundY - endMarker.height / 2;
+      this.add.rectangle(markerX, markerY, endMarker.width, endMarker.height, hexToInt(palette.bullet));
+    }
 
     // --- Bullet pool (created before Player so we can pass it in) ---
     // Shared across all weapons (P3.2) — sized for the worst case (SMG spray + shotgun volley).
@@ -131,6 +135,34 @@ export class GameScene extends Scene {
     // platforms via the acidGroundOnly filter, so it can arc over a ledge onto a perched player).
     this.physics.add.overlap(this.player, this.acid, this.onAcidHitPlayer, null, this);
     this.physics.add.collider(this.acid, this.terrain, this.onAcidHitGround, this.acidGroundOnly, this);
+
+    // --- Boss (P3.7): a boss-arena level spawns a dedicated Boss entity (not zones). It reuses the terrain
+    // collider, the bullet↔ and player↔ overlaps, and the acid pool + spawnAcid; UIScene owns its health bar.
+    this.boss = null;
+    if (LEVEL.boss) {
+      this.boss = new Boss(this, LEVEL.bossSpawn.x, LEVEL.bossSpawn.y, LEVEL.boss);
+      this.boss.player = this.player;
+      // The Warden is a SOLID BODY the player cannot pass — it walls the arena off, so the player can only fall
+      // back toward the start, never slip behind it. `pushable = false` makes it immovable in the collision (the
+      // huge boss isn't shoved by the smaller player; it still moves under its own patrol velocity + gravity).
+      this.boss.body.pushable = false;
+      // Grounded on the arena floor. Uses the SAME one-way process as the player/enemies so the low cover
+      // platforms are pass-through for the boss (its 255px body would otherwise ram them as solid walls and
+      // stop its patrol/lunge dead) — it only collides with the solid ground rows, pacing freely underneath.
+      this.physics.add.collider(this.boss, this.terrain, null, this.terrainProcess, this);
+      this.physics.add.overlap(this.bullets, this.boss, this.onBulletHitBoss, null, this); // shots damage it
+      // Player↔boss is a COLLIDER (not an overlap): the body is solid so the player is blocked from passing to
+      // the far side; the collide callback still applies lunge-only contact damage (gated on boss.contactActive).
+      this.physics.add.collider(this.player, this.boss, this.onPlayerTouchBoss, null, this);
+      // Telegraphed intro: lock the player, then a timer ALWAYS restores control + opens the fight (no soft-lock;
+      // on a restart the timer is torn down and create() re-locks + re-schedules cleanly).
+      this.player.locked = true;
+      this.boss.playIntro();
+      this.time.delayedCall(this.boss.def.introMs, () => {
+        this.player.locked = false;
+        this.boss.beginFight();
+      });
+    }
 
     // --- Atmosphere (L4) — gated behind the master switch. Off by default: the darkness overlay
     // hid the player/zombies too much to enjoy the level. When enabled it re-adds the full night
@@ -224,25 +256,31 @@ export class GameScene extends Scene {
       return; // fix: no further access to torn-down scene objects
     }
 
-    // Win condition: player reached the end marker (of the resolved level, P3.6)
-    if (!this.player.dead && !this.player.won && this.player.x >= this.level.endMarkerX) {
-      this.player.won = true;
-      this.player.body.setVelocity(0, 0);
-    }
+    // Boss arena (P3.7): no traversal win / shop / zones — the fight IS the level. Drive the boss; completion
+    // is boss-death, routed through onBossDefeated (fired by the boss's death sequence), not the endMarker path.
+    if (this.level.boss) {
+      if (this.boss) this.boss.tick(time, delta);
+    } else {
+      // Win condition: player reached the end marker (of the resolved level, P3.6)
+      if (!this.player.dead && !this.player.won && this.player.x >= this.level.endMarkerX) {
+        this.player.won = true;
+        this.player.body.setVelocity(0, 0);
+      }
 
-    // Level-complete → end-of-level shop (P3.3). Keys off player.won, so crossing the marker OR the
-    // harness setting won both open the shop. enterShop() (P3.5) banks this level's salvage + saves with
-    // phase:'shop' BEFORE the transition, so a Continue after closing mid-shop lands correctly with the
-    // salvage already banked. Stop UI, then start Shop (which shuts down this scene).
-    if (this.player.won) {
-      runState.enterShop();
-      this.scene.stop('UI');
-      this.scene.start('Shop');
-      return; // GameScene is shutting down — don't touch its objects below
-    }
+      // Level-complete → end-of-level shop (P3.3). Keys off player.won, so crossing the marker OR the
+      // harness setting won both open the shop. enterShop() (P3.5) banks this level's salvage + saves with
+      // phase:'shop' BEFORE the transition, so a Continue after closing mid-shop lands correctly with the
+      // salvage already banked. Stop UI, then start Shop (which shuts down this scene).
+      if (this.player.won) {
+        runState.enterShop();
+        this.scene.stop('UI');
+        this.scene.start('Shop');
+        return; // GameScene is shutting down — don't touch its objects below
+      }
 
-    // Zone-triggered spawns (P3.6): fire any zone the player has reached this frame (once each).
-    this.updateZoneSpawns();
+      // Zone-triggered spawns (P3.6): fire any zone the player has reached this frame (once each).
+      this.updateZoneSpawns();
+    }
 
     // Darkness overlay: erase the player glow + gun flashlight cone this frame (only when the
     // night atmosphere is enabled — otherwise there's no overlay to redraw)
@@ -487,6 +525,40 @@ export class GameScene extends Scene {
     enemy.takeDamage(bullet.damage); // per-shot damage stamped at fire time (P3.2), not a global lookup
   }
 
+  /** Bullet↔boss overlap (P3.7): same impact feedback as an enemy hit, routed to the boss's own takeDamage
+   *  (feeds the boss bar, crosses phase thresholds, runs the death sequence). No salvage. The boss body is huge,
+   *  so no point-blank tunneling — the flight overlap alone suffices. */
+  onBulletHitBoss(a, b) {
+    // GROUP-vs-single-SPRITE overlap: Phaser dispatches this as (sprite, groupMember), so the BOSS arrives
+    // first and the bullet second — the REVERSE of group-vs-group onBulletHitEnemy. Normalise by identity so
+    // a future re-order of the overlap() args can't silently swap them again (this was the Warden-hang bug).
+    const boss = a === this.boss ? a : b;
+    const bullet = a === this.boss ? b : a;
+    if (!bullet.active || boss.dying) return;
+    this.impactEmitter.explode(CONFIG.particles.impact.count, bullet.x, bullet.y);
+    this.bloodEmitter.explode(CONFIG.particles.blood.count, boss.x, bullet.y);
+    bullet.deactivate();
+    boss.takeDamage(bullet.damage);
+  }
+
+  /** Player↔boss collide callback (P3.7): the solid body blocks passage every frame; damage lands only while a
+   *  lunge is committed (boss.contactActive) — idle contact is safe (only the telegraphed attack hurts, which
+   *  reads fair). Damage is invuln-gated by takeDamage. Both are sprites, so the arg order (player, boss) holds. */
+  onPlayerTouchBoss(player, boss) {
+    if (!player.active || player.dead || !boss.contactActive) return;
+    player.takeDamage(boss.def.contactDamage, boss.x);
+  }
+
+  /** Boss-death payoff (P3.7): the boss's death sequence calls this. Hide the boss bar, then fire the level's
+   *  data-driven `beatOnDefeat` → VictoryScene (parallel to awardSalvage's kill hook, but for the boss). Always
+   *  reaches Victory — no soft-lock. */
+  onBossDefeated(boss) {
+    const ui = this.scene.get('UI');
+    if (ui && ui.hideBossBar) ui.hideBossBar();
+    this.scene.stop('UI');
+    this.scene.start('Victory', { beat: this.level.beatOnDefeat });
+  }
+
   /**
    * Award salvage on a kill (P3.3) — the single currency hook, called from Enemy.takeDamage()'s lethal
    * branch. Rolls min..max from the type's salvageDrop (falling back to the shared melee default), adds
@@ -522,7 +594,7 @@ export class GameScene extends Scene {
    * distance, floored at minLobTime so a near-overhead shot can't blow up), then vx = dx/T and
    * vy = (dy − ½gT²)/T lands the glob on the target. Because it arcs, a perched player is reachable.
    */
-  spawnAcid(enemy, player) {
+  spawnAcid(enemy, player, targetX = player.x) {
     const g = CONFIG.acid.gravityY;
     // Muzzle origin: prefer the enemy's explicit muzzleOffset (px from feet-origin, decoupled from
     // the hitbox so body retuning never moves the spit). Fall back to the old body-relative estimate
@@ -531,7 +603,7 @@ export class GameScene extends Scene {
     // off is measured in unscaled texture px from the feet-origin → scale it by the sprite's art scale.
     const mx = off ? enemy.x + off.x * enemy.scaleX : enemy.x;
     const my = off ? enemy.y + off.y * enemy.scaleY : enemy.y - enemy.body.height * 0.6;
-    const tx = player.x;
+    const tx = targetX;                                     // P3.7: boss volley fans globs via a per-glob target X
     const ty = player.y - PLAYER_BODY.height * 0.5;         // aim at the player's torso
     const dx = tx - mx;
     const dy = ty - my;

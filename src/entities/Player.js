@@ -68,6 +68,7 @@ export class Player extends Physics.Arcade.Sprite {
     this.dead = false;
     this.won = false;
     this.wantsRestart = false;
+    this.locked = false; // P3.7: input freeze during the boss intro (GameScene sets/clears on a timer)
 
     // --- Debug ---
     this.godMode = false;
@@ -132,6 +133,13 @@ export class Player extends Physics.Arcade.Sprite {
       if (Input.Keyboard.JustDown(this.keys.reload)) {
         this.wantsRestart = true;
       }
+      return;
+    }
+
+    // Boss intro lock (P3.7): freeze all input while the scripted entrance plays; GameScene clears it on a
+    // timer that ALWAYS fires (no soft-lock). Kill horizontal drift so the player doesn't slide during the lock.
+    if (this.locked) {
+      this.body.setVelocityX(0);
       return;
     }
 
