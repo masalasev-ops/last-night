@@ -41,8 +41,8 @@ Source of truth: `docs/PHASE3_PLAN.md` + per-milestone specs (e.g. `docs/P3.1_RA
 | **P3.1 — Ranged enemy (Acid Spitter)** | Ranged `enemyProfile` on the shared FSM (kite band + arcing acid that reaches a perched player, via `AcidProjectile`); real PixelLab sprite (idle/walk/attack/hurt/dead) dropped in through the swap-point with an explicit `ACID_SPITTER_BODY`, decoupled spit muzzle, and `artScale` sizing to the zombie roster; green-blob placeholder kept as fallback. | ✅ Done |
 | **P3.2 — Data-driven weapon system + switching** | Flat `weapon` → a **`WEAPONS` data table** (Rifle/Shotgun/SMG) read live via `player.weapon`; **per-weapon mags** switchable with **1/2/3**; per-weapon **fire mode** (`auto` hold-to-fire vs `single` click-per-shell), **pellets/spread**, **projectileTint**, and **muzzleScale**. Headline refactor: **bullets carry their own damage/range/tint** (stamped at `bullet.fire()`), so a mid-air weapon switch never mutates a round in flight. Weapon identity = HUD label + projectile, **no character-art change**. A 4th weapon is now a pure data row. | ✅ Done |
 | **P3.3 — Salvage, end-of-level shop & upgrades** | The combat loop **kill → salvage → shop → stronger**. New **`RunState`** module (in-memory singleton, survives scene transitions) owns run-scoped `salvage`/`unlockedWeapons`/`ownedUpgrades` + a **runtime weapons table** (a `structuredClone` of the `CONFIG.WEAPONS` template that upgrades modify). `Player.get weapon()` reads `runState.weapons[id]`, so via the P3.2 seam an upgrade reaches the bullet with **zero engine change**. Enemies drop salvage on the kill (auto-collected, floating `+N`, HUD counter); a new **`ShopScene`** spends it on **weapon unlocks** (start rifle-only; shotgun/SMG earned) and **data-driven `UPGRADES`** (add/mult on damage/reload/mag/fireRate, tiered via `prereq`), applied by **`recompute()`** (adds-before-mults, rebuilt from template). Win → shop → next level; `RunState` persists across the transition. | ✅ Done |
-| **P3.4 — Enemy roster (Runner / Tank / Flyer)** | Generalized `Enemy.preUpdate` stat resolution to `this.def.<stat> ?? CONFIG.enemy.<stat>` for **every** shared stat (was ranged-only) + a `sheet`→`animKey` override in `spawn()`. That makes **Runner** (fast/fragile) and **Tank** (slow/tanky/big) **pure `ENEMIES` data rows on the melee FSM — zero new code** (they borrow a zombie sheet, tinted + rescaled). **Flyer** is the one new `enemyProfile:'flyer'` branch: gravity-off, homes in 2D, reaches a perched player, damages on contact (placeholder blob). Melee zombies unchanged (inherit defaults). Placeholder reskins only — no PixelLab. | ✅ Done |
-| **P3.5 — Save / Continue (level-boundary checkpoints)** | Persisted the in-memory `RunState` to **versioned localStorage** (`lastnight.save.v1`, `SCHEMA_VERSION`) so a run survives a browser reload, plus a `levelIndex`/`phase` cursor. **The only checkpoint is a level boundary**: clearing a level banks salvage + saves (`phase:'shop'`); **dying reverts to the in-memory level-start `_checkpoint`** (attempt's salvage discarded, unlocks/upgrades intact) and replays the level — **no save written on death**. Two synced concerns: **`_checkpoint`** (death-revert, works even if storage is blocked) vs **on-disk save** (cross-session Continue). Load = **set fields + `recompute()`** (weapons table never serialized; `ownedUpgrades` rehydrated as a `Set`) — the P3.2/P3.3 seam pays off again. New **`TitleScene`** (text; the confirmed entry point, not auto-Continue): **Continue** shows only when `hasSave()`, its label named from `peekSave()` (`Level N` / `Shop (Level N cleared)`); **New Game** wipes + resets + starts L1. All `localStorage` access `try/catch`ed — corrupt/wrong-version/blocked all degrade to "no save", never a crash. | ✅ Done |
+| **P3.4 — Enemy roster (Runner / Tank / Flyer)** | Generalized `Enemy.preUpdate` stat resolution to `this.def.<stat> ?? CONFIG.enemy.<stat>` for **every** shared stat (was ranged-only) + a `sheet`→`animKey` override in `spawn()`. That makes **Runner** (fast/fragile) and **Tank** (slow/tanky/big) **pure `ENEMIES` data rows on the melee FSM — zero new code** (they shipped as tinted, rescaled zombie sheets). **Flyer** is the one new `enemyProfile:'flyer'` branch: gravity-off, homes in 2D, reaches a perched player, damages on contact (placeholder blob). Melee zombies unchanged (inherit defaults). Shipped on placeholders; **real Tank art (PixelLab, own sheet) + a threat-tune have since landed** via the swap-point — Runner + Flyer stay placeholders (see post-P3.4 note). | ✅ Done |
+| **P3.5 — Save / Continue (level-boundary checkpoints)** | Persisted the in-memory `RunState` to **versioned localStorage** (`lastnight.save.v1`, `SCHEMA_VERSION`) so a run survives a browser reload, plus a `levelIndex`/`phase` cursor. **The only checkpoint is a level boundary**: clearing a level banks salvage + saves (`phase:'shop'`); **dying reverts to the in-memory level-start `_checkpoint`** (attempt's salvage discarded, unlocks/upgrades intact) and replays the level — **no save written on death**. Two synced concerns: **`_checkpoint`** (death-revert, works even if storage is blocked) vs **on-disk save** (cross-session Continue). Load = **set fields + `recompute()`** (weapons table never serialized; `ownedUpgrades` rehydrated as a `Set`) — the P3.2/P3.3 seam pays off again. New **`TitleScene`** (text; the confirmed entry point, not auto-Continue): **Continue** shows only when `hasSave()`, its label named from `peekSave()` (`Level N` / `Shop (Level N cleared)`); **New Game** wipes + resets + starts L1. All `localStorage` access `try/catch`ed — corrupt/wrong-version/blocked all degrade to "no save", never a crash. *(Later add: an **Erase Save** Title item — `clearAllSaves()` wipes every `lastnight.*` key behind a two-click confirm.)* | ✅ Done |
 
 ### P3.1 notes / follow-ups
 - **AI-art pipeline** established (see CLAUDE.md → Assets): raw PixelLab frames git-ignored under
@@ -101,10 +101,11 @@ Source of truth: `docs/PHASE3_PLAN.md` + per-milestone specs (e.g. `docs/P3.1_RA
   while `this.type` stays the roster id (salvage/lookups). **Pooling-safety**: `deactivate()` restores
   `body.setAllowGravity(true)` so a dead Flyer reused as a grounded zombie doesn't float (only the flyer
   `spawn()` turns gravity off).
-- **Parked (placeholders → real art later, no logic change)**: Runner/Tank are **tinted, rescaled zombie
-  reskins**; Flyer is a **purple blob**. Real per-type CraftPix-matched art drops in via the swap-point
-  (`sheet`/`TEXTURE_MAP`) — the P3.1 Spitter flow. Flyer has **no pathfinding** (straight-line homing;
-  fine for the open forest — revisit if the P3.6 biome geometry needs it). Per-type SFX → P3.9.
+- **Parked (placeholders → real art later, no logic change)**: Runner is a **tinted, rescaled zombie
+  reskin** and Flyer a **purple blob**; **Tank now runs on real art** (see the post-P3.4 note below).
+  Remaining per-type CraftPix-matched art drops in via the swap-point (`sheet`/`TEXTURE_MAP`) — the P3.1
+  Spitter flow. Flyer has **no pathfinding** (straight-line homing; fine for the open forest — revisit if
+  the P3.6 biome geometry needs it). Per-type SFX → P3.9.
 - Verified with the puppeteer-core harness (A–H, 8/8): melee regression intact (Zombie_1..4 hp30, no
   overrides, scale 1 — **test B**); Runner hp15/×0.85/Zombie_2 sheet; Tank hp90/×1.28 with a scaled body
   that hugs (35.8px) + stays grounded; Flyer gravity-off, homes on both axes (reaches *up* to a perched
@@ -114,6 +115,16 @@ Source of truth: `docs/PHASE3_PLAN.md` + per-milestone specs (e.g. `docs/P3.1_RA
   sent the round away → "can't hit when too close". Now bullets spawn from the **player centre** at gun
   height (forward blind spot gone; still aims true up close); the muzzle flash/flashlight stay at the tip.
   Verified: aiming beyond a D=4..24px enemy now hits; P3.2 weapon harness still 9/9 (no regression).
+- **Post-P3.4 — real Tank art + threat tune + placement** (the P3.1 swap-point flow, zero FSM change):
+  the Tank's placeholder (`sheet:'Zombie_3'`, tint, ×1.28) was replaced with **AI-generated hulking-brute
+  art on its own sheet** — `public/assets/Tank/{Idle,Walk,Attack,Hurt,Dead}.png`, registered under
+  `ASSETS.zombies` via a per-type `dirs`/`types` entry; `sheet`+`tint` dropped, and an **explicit `Tank`
+  body** added (no `ZOMBIE_BODY` fallback once the borrowed sheet is gone), ×1.25. A **threat pass** after
+  a playtest (it was trivially kited + out-DPS'd before it landed a blow): `maxHealth 90→110`,
+  `chaseSpeed 110→165`, `attackRange 32→46`, `touchDamage 22→26`, `attackCooldown 1.2→0.8` — still slower
+  than the player on patrol, but it now commits to a charge and punishes a cornered player. Also **moved
+  in `LEVEL.enemies` to guard the medic chest** near the level end (after the 3-zombie cluster). Runner +
+  Flyer remain placeholders.
 
 ### P3.5 notes / follow-ups
 - **The P3.3 seam paid off again**: a load is just `applySnapshot()` → set fields + rehydrate `ownedUpgrades`
@@ -153,3 +164,11 @@ Source of truth: `docs/PHASE3_PLAN.md` + per-milestone specs (e.g. `docs/P3.1_RA
   disabled). Fix: keep the body enabled + zero velocity so gravity + the terrain collider settle it on the
   ground — safe because enemies overlap (never collide) and every damage path already skips when `dead`.
   Harness: corpse falls (y 301→461) and lands, body stays enabled.
+- **Later add — Erase Save (Title)**: `runState.clearAllSaves()` — a namespace-wide wipe that removes
+  **every `lastnight.*` key** (the current save + any stale/older-version keys, so nothing lingers across a
+  schema bump), then resets the in-memory run to defaults (`reset()` + cursor/`_checkpoint`). The Title shows
+  an **Erase Save** button only when `hasSave()`, guarded by a **two-click confirm** (`onErase` arms →
+  recolors the label to a warning → second click wipes + `scene.restart()`, so Continue **and** Erase vanish
+  as visible proof). Complements `clearSave()` (the single-key New-Game wipe); no schema change. Verified:
+  with a save present the menu shows Continue + New Game + Erase; second `onErase()` clears a planted stale
+  `lastnight.save.v0` too, `hasSave()` → false, salvage back to 0, and the re-render shows only New Game.
