@@ -322,7 +322,17 @@ export class Player extends Physics.Arcade.Sprite {
       const vx = Math.cos(angle) * weapon.bulletSpeed;
       const vy = Math.sin(angle) * weapon.bulletSpeed;
       const bullet = this.bulletGroup.get(bx, by, CONFIG.TEXTURE_MAP.bullet);
-      if (bullet) bullet.fire(bx, by, vx, vy, stats);
+      if (bullet) {
+        bullet.fire(bx, by, vx, vy, stats);
+        // Point-blank safety net: resolve an enemy the player is TOUCHING this frame. A fast round
+        // (~25px/frame) can tunnel past a thin/overlapping enemy before Arcade's overlap check runs at the
+        // post-move position → "bullets have no effect when touching". An immediate body-vs-body overlap at
+        // the spawn (body already synced by Bullet.fire's reset) hits it now, via the same onBulletHitEnemy
+        // path (which consumes the bullet, so the normal flight overlap can't double-hit).
+        if (this.scene.enemies) {
+          this.scene.physics.overlap(bullet, this.scene.enemies, this.scene.onBulletHitEnemy, null, this.scene);
+        }
+      }
     }
 
     // --- Per-shot feedback — once per trigger pull, outside the pellet loop ---

@@ -204,14 +204,19 @@ Source of truth: `docs/PHASE3_PLAN.md` + per-milestone specs (e.g. `docs/P3.1_RA
   `EndScene` is a text placeholder → **boss/victory at P3.7**. **Known cosmetic nit**: the L5 intro card still
   reads "Reach the far side of the forest" on L2 — a per-level subtitle is a small follow-up (UIScene reading
   `LEVELS[levelIndex]`).
-- **Playtest fix — Runner unhittable at close range**: bullets spawn at the player's gun line
-  (`feet + muzzleOffset.y` ≈ y462), but the Runner's real-art body (`artScale 0.70`) was only 36px tall,
-  spanning `[488..524]` — its top sat **26px below the gun line**, so close/point-blank rifle shots sailed
-  over the short Runner's head (it renders ~64px but the hitbox covered only the lower torso). Fix: grew the
-  explicit body to cover the full silhouette (`height 52→89`, `offsetY 59→22`) → scales to `[462..524]`,
-  the same span as a standard zombie, top on the gun line. Verified: Runner now takes hits at close range
-  identically to `Zombie_1` (was MISS at every distance). *(Spitter's body top is 7px low — a much smaller
-  margin on a ranged kiter that's rarely point-blank; left as-is.)*
+- **Playtest fix — Runner unhittable at close range (two causes)**: (1) *Hitbox too short* — bullets spawn at
+  the player's gun line (`feet + muzzleOffset.y` ≈ y462), but the Runner's real-art body (`artScale 0.70`)
+  was only 36px tall, spanning `[488..524]`, top **26px below the gun line** → close shots sailed over its
+  head (it renders ~64px but the body covered only the lower torso). Grew the explicit body to the full
+  silhouette (`height 52→89`, `offsetY 59→22`) → `[462..524]`, matching a standard zombie. *(Spitter's top is
+  7px low — a much smaller margin on a rarely-point-blank kiter; left as-is.)* (2) *Fast-bullet tunneling* —
+  even with the taller body, an enemy the player is literally **touching** took no damage: a rifle round
+  (~25px/frame) tunnels past a thin/overlapping body before Arcade's overlap check runs at the post-move
+  position. Added a **muzzle-contact resolve** — `Bullet.fire()` now `body.reset()`s so the body is synced to
+  the spawn this frame, and `fireWeapon()` runs an immediate `physics.overlap(bullet, enemies)` right after
+  spawning each pellet (same `onBulletHitEnemy` path, which consumes the bullet so the flight overlap can't
+  double-hit). Verified: Runner (and Zombie) now hit at **every** distance D=0 (fully overlapping)…40, single
+  damage per shot; was MISS at every close distance before.
 - Verified with the puppeteer-core harness (A–I, 9/9): both biomes' textures load (0 errors/404s); **L1
   regression** — its zones reproduce the exact roster (Zombie×5 family, Runner pair @2060/2300, Spitter @1500,
   Tank @3600); **cursor drives the level** (levelIndex 2 → ruins, platforms/worldWidth **differ** from L1);

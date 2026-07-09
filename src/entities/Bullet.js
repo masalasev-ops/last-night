@@ -45,10 +45,12 @@ export class Bullet extends Physics.Arcade.Sprite {
    *   the bare bullet texture (rifle); a non-white tint multiply-colours it (shotgun/smg).
    */
   fire(x, y, velocityX, velocityY, stats) {
-    this.setPosition(x, y);
     this.setActive(true);
     this.setVisible(true);
     this.body.enable = true;
+    // body.reset() (not setPosition) so the BODY is synced to the spawn point THIS frame — otherwise the
+    // body position lags a step and the muzzle-contact overlap in fireWeapon would test a stale location.
+    this.body.reset(x, y);
     this.body.setVelocity(velocityX, velocityY);
     this.distanceTraveled = 0;
 
