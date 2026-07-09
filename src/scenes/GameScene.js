@@ -204,10 +204,12 @@ export class GameScene extends Scene {
   update(time, delta) {
     this.player.update(time, delta);
 
-    // Restart: player died and pressed R. Stop UI (GameScene owns it now) then restart the level; the
-    // fresh GameScene.create() relaunches a fresh UI. RunState is a module singleton — untouched by the
-    // restart — so salvage/unlocks/upgrades carry over (real death economics come in P3.5).
+    // Restart: player died and pressed R. Revert RunState to the level-start checkpoint FIRST (P3.5) —
+    // discards the failed attempt's salvage while keeping banked unlocks/upgrades; NO save is written on
+    // death. Then stop UI (GameScene owns it) and restart; the fresh GameScene.create() rebuilds Player
+    // from the reverted RunState and relaunches a fresh UI.
     if (this.player.wantsRestart) {
+      runState.restoreCheckpoint();
       this.scene.stop('UI');
       this.scene.restart();
       return; // fix: no further access to torn-down scene objects
@@ -220,8 +222,11 @@ export class GameScene extends Scene {
     }
 
     // Level-complete → end-of-level shop (P3.3). Keys off player.won, so crossing the marker OR the
-    // harness setting won both open the shop. Stop UI, then start Shop (which shuts down this scene).
+    // harness setting won both open the shop. enterShop() (P3.5) banks this level's salvage + saves with
+    // phase:'shop' BEFORE the transition, so a Continue after closing mid-shop lands correctly with the
+    // salvage already banked. Stop UI, then start Shop (which shuts down this scene).
     if (this.player.won) {
+      runState.enterShop();
       this.scene.stop('UI');
       this.scene.start('Shop');
       return; // GameScene is shutting down — don't touch its objects below
@@ -384,14 +389,19 @@ export class GameScene extends Scene {
    */
   onPlayerTouchEnemy(player, enemy) {
     if (!player.active || !enemy.active || player.dead || enemy.state === 'DEAD') return;
-    // Only fire once per contact — knockbackTimer prevents re-triggering
-    if (player.knockbackTimer > 0) return;
+    // Gate on the dedicated contact-shove cooldown (NOT knockbackTimer): with a dense/fast cluster the
+    // old knockbackTimer gate (0.15s) re-launched the player every frame it stayed overlapping, juggling
+    // it in place with no window to run or jump. The longer cooldown leaves the player in control between
+    // shoves so it can actually escape (sprint 416 > Runner 360).
+    if (player.contactKbTimer > 0) return;
 
+    const kb = CONFIG.contactKnockback;
     const dir = player.x >= enemy.x ? 1 : -1;
-    // Strong push: horizontal away from enemy, vertical up enough to clear them
-    player.body.setVelocityX(CONFIG.knockback * 1.2 * dir);
-    player.body.setVelocityY(-CONFIG.knockback * 1.0);
-    player.knockbackTimer = CONFIG.knockbackDuration;
+    // Push away horizontally + a small upward HOP (vMultiplier ~0.5, not a full launch).
+    player.body.setVelocityX(CONFIG.knockback * kb.hMultiplier * dir);
+    player.body.setVelocityY(-CONFIG.knockback * kb.vMultiplier);
+    player.knockbackTimer = CONFIG.knockbackDuration; // brief input lock (unchanged)
+    player.contactKbTimer = kb.cooldown;              // but no re-shove until the cooldown elapses
   }
 
   /**

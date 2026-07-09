@@ -38,11 +38,12 @@ export class BootScene extends Scene {
       });
     }
 
-    // Zombies — 4 types × 5 states; filename is the capitalized state (idle → Idle.png)
+    // Zombies — 4 types × 5 states; filename is the capitalized state (idle → Idle.png).
+    // A type may override its folder via Z.dirs (the real-art Runner lives in assets/Runner).
     const Z = ASSETS.zombies;
     for (const [type, counts] of Object.entries(Z.types)) {
       for (const state of Object.keys(counts)) {
-        this.load.spritesheet(`${type}-${state}`, `${Z.dir}/${type}/${cap(state)}.png`, {
+        this.load.spritesheet(`${type}-${state}`, `${(Z.dirs?.[type]) ?? Z.dir}/${type}/${cap(state)}.png`, {
           frameWidth: Z.frame,
           frameHeight: Z.frame,
         });
@@ -80,15 +81,15 @@ export class BootScene extends Scene {
     this.generateLightTextures();
     registerAnimations(this);
 
-    // DoD verification: confirm every animation registered (9 player + 20 zombie + 5 spitter + 1 pickup = 35)
+    // DoD verification: confirm every animation registered (9 player + 25 zombie-family + 5 spitter + 1 pickup = 40)
     console.log(
       `[BootScene] Animations registered: ${this.anims.anims.size} →`,
       [...this.anims.anims.keys()],
     );
 
-    // Start the level. GameScene.create() now OWNS launching the UI overlay (P3.3), so every fresh level
-    // — first boot, a shop → next-level Continue, a death restart — brings up a fresh HUD.
-    this.scene.start('Game');
+    // Route to the Title (P3.5) — no longer auto-start Game. The player chooses New Game vs Continue;
+    // Title owns which run (and which phase) gets loaded before Game/Shop take over.
+    this.scene.start('Title');
   }
 
   /**

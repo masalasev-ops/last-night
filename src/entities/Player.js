@@ -75,6 +75,7 @@ export class Player extends Physics.Arcade.Sprite {
     // --- Damage response ---
     this.invulnTimer = 0;      // s — remaining invulnerability after a hit
     this.knockbackTimer = 0;   // s — forced knockback, overrides horizontal input
+    this.contactKbTimer = 0;   // s — cooldown gating enemy-contact shoves (prevents the juggle/bounce-lock)
     this.blinkTimer = 0;       // s — accumulator for alpha blink toggle
     this.hurtTimer = 0;        // s — remaining hurt-animation window (drives anim priority)
     // Hurt-anim display length read from the registered anim itself — not a magic number.
@@ -158,6 +159,11 @@ export class Player extends Physics.Arcade.Sprite {
     // --- Knockback timer — decays each frame; while active, skip horizontal input ---
     if (this.knockbackTimer > 0) {
       this.knockbackTimer -= dt;
+    }
+
+    // --- Contact-shove cooldown — longer than knockback, so a cluster can't re-launch every 0.15s ---
+    if (this.contactKbTimer > 0) {
+      this.contactKbTimer -= dt;
     }
 
     // --- Hurt-animation window ---
@@ -381,8 +387,11 @@ export class Player extends Physics.Arcade.Sprite {
       this.dead = true;
       this.play('player-death', true); // one-shot, holds last frame (outranks all via dead early-return)
       this.setTint(0x880000); // dark red corpse
+      // Zero velocity but KEEP the body enabled so gravity + the terrain collider settle the corpse on
+      // the ground (disabling it froze the corpse mid-air wherever it died — the "floating corpse" bug).
+      // Enemies overlap (never collide with) the player, and onPlayerTouchEnemy/takeDamage/acid all skip
+      // when `dead`, so the corpse can't be shoved regardless.
       this.body.setVelocity(0, 0);
-      this.body.enable = false; // fix: corpse can't be shoved by enemies
       return;
     }
 

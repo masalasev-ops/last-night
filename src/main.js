@@ -2,6 +2,7 @@ import { AUTO, Scale, Game } from 'phaser';
 import { CONFIG } from './config.js';
 import { runState } from './runState.js';
 import { BootScene } from './scenes/BootScene.js';
+import { TitleScene } from './scenes/TitleScene.js';
 import { GameScene } from './scenes/GameScene.js';
 import { UIScene } from './scenes/UIScene.js';
 import { ShopScene } from './scenes/ShopScene.js';
@@ -24,7 +25,7 @@ const config = {
       debug: false,
     },
   },
-  scene: [BootScene, GameScene, UIScene, ShopScene],
+  scene: [BootScene, TitleScene, GameScene, UIScene, ShopScene],
 };
 
 const StartGame = (parent) => {

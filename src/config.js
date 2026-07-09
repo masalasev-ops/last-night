@@ -18,6 +18,15 @@ export const CONFIG = {
   invulnOnHit: 0.6, // s
   knockback: 320, // px/s
   knockbackDuration: 0.15, // s — forced knockback before regaining horizontal control
+  // Enemy-contact shove (the non-damaging "bump away", GameScene.onPlayerTouchEnemy). Its own cooldown —
+  // longer than knockbackDuration — so a dense/fast cluster can't re-launch the player every 0.15s
+  // (the juggle/bounce-lock that made escape impossible). Between shoves the player regains full control
+  // (sprint 416 > Runner 360, so it can actually run away). vMultiplier is a HOP, not a launch.
+  contactKnockback: {
+    cooldown: 0.5,    // s — minimum interval between contact shoves
+    hMultiplier: 1.2, // × knockback — horizontal push away from the enemy
+    vMultiplier: 0.5, // × knockback — small upward hop (was 1.0: a full launch that juggled the player)
+  },
   moveSpeed: 260, // px/s
   sprintMultiplier: 1.6,
   jumpVelocity: 860, // px/s
@@ -137,7 +146,15 @@ export const CONFIG = {
     // type borrow an existing zombie's frames (rendered via a `tint` + `artScale` so variants read now).
     // Real per-type art is a later swap-point drop. All numbers are tuning starting points. ---
     Runner: {
-      aiProfile: 'melee', sheet: 'Zombie_2', tint: 0xff6a6a, artScale: 0.85, // small + red = fast rusher
+      // Real dried-blood AI art (public/assets/Runner/, registered under ASSETS.zombies). `sheet`+`tint`
+      // dropped — animKey now resolves to 'Runner' (its own sheet), which carries its own color.
+      aiProfile: 'melee',
+      artScale: 0.70,   // → ~64px, ≈ a standard zombie; the lean bloodied silhouette + speed read distinct
+      // Explicit torso body (required now that `sheet` is gone — no ZOMBIE_BODY['Runner'] to fall back to).
+      // Measured from Idle.png: feet row ~112 (originY 0.87), character center-x 66; offsetX 52 centers the
+      // 24-wide body on the FRAME centre (52+12=64) so flipX never shifts the hitbox. Arcade scales
+      // body+offset by artScale around the feet origin on the next step (as Spitter/Tank do).
+      body: { width: 24, height: 52, originX: 0.5, originY: 0.87, offsetX: 52, offsetY: 59, facesLeft: false },
       maxHealth: 15, moveSpeed: 180, chaseSpeed: 360, touchDamage: 8, attackCooldown: 0.6,
       salvageDrop: { min: 1, max: 2 },
     },
@@ -397,13 +414,20 @@ export const ASSETS = {
   },
   zombies: {
     dir: 'assets/urban-zombie-sprite-sheet-pixel-art-pack',
+    // Per-type dir override (BootScene reads dirs?.[type] ?? dir). The loader builds `${dir}/${type}/File`,
+    // so it already appends the type name as the folder — the Runner's real art lives at
+    // assets/Runner/*.png, hence the parent `'assets'` here (NOT 'assets/Runner', which would double to
+    // assets/Runner/Runner/). The four Zombie_N fall through to `dir`. Filenames stay the capitalized state.
+    dirs: { Runner: 'assets' },
     frame: 128,
-    // Per-type frame counts. Sheet filenames are the capitalized state (idle → Idle.png).
+    // Per-type frame counts. Sheet filenames are the capitalized state (idle → Idle.png). The Runner
+    // rides the zombie-family loader/anim-registration (it's a melee type; `walk` plays its run strip).
     types: {
       Zombie_1: { idle: 6, walk: 10, attack: 5,  hurt: 4, dead: 5 },
       Zombie_2: { idle: 6, walk: 10, attack: 5,  hurt: 4, dead: 5 },
       Zombie_3: { idle: 6, walk: 10, attack: 4,  hurt: 4, dead: 5 },
       Zombie_4: { idle: 7, walk: 12, attack: 10, hurt: 4, dead: 5 },
+      Runner:   { idle: 6, walk: 10, attack: 5,  hurt: 4, dead: 5 }, // real dried-blood art (walk = fast run)
     },
     fps: { idle: 6, walk: 10, attack: 12, hurt: 12, dead: 8 },
   },

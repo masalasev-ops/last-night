@@ -79,8 +79,13 @@ export class ShopScene extends Scene {
     }
 
     // --- Continue → next level ---
+    // advanceLevel() (P3.5) bumps levelIndex, flips phase back to 'level', and checkpoints (this becomes
+    // the next level's death-revert target + on-disk save). Stub still loads Level 1 until P3.6.
     const cont = this.mkText(CONFIG.width / 2, CONFIG.height - 44, '[ CONTINUE → ]', 22, '#3ad06a').setOrigin(0.5);
-    cont.setInteractive({ useHandCursor: true }).on('pointerdown', () => this.scene.start('Game'));
+    cont.setInteractive({ useHandCursor: true }).on('pointerdown', () => {
+      runState.advanceLevel();
+      this.scene.start('Game');
+    });
     this.rows.push(cont);
   }
 
@@ -94,7 +99,12 @@ export class ShopScene extends Scene {
     const row = this.mkText(x, y, `${label}    ${state}`, 16, color);
     if (buyable) {
       row.setInteractive({ useHandCursor: true }).on('pointerdown', () => {
-        if (buy()) this.render();
+        // Single choke point for both weapon unlocks and upgrades: persist immediately on success (P3.5)
+        // so purchases survive closing the browser mid-shop, then re-render states + balance.
+        if (buy()) {
+          runState.save();
+          this.render();
+        }
       });
     }
     this.rows.push(row);
